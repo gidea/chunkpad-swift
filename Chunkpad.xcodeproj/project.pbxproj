@@ -1,0 +1,543 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		09A37CAE3717A5D0BA1807C2 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A9E1A806AE6FBE3997F98A /* Message.swift */; };
+		0E1F606BD786DD5AC3290517 /* DocumentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8166A0FF8CE1B59E34044DB /* DocumentProcessor.swift */; };
+		162BFB1F401973D6B5F472A5 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5EAF502D927E2781BDBCC67 /* MainView.swift */; };
+		2A8B52D2A559D4C3199C5307 /* LLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55054113AD5B984E336F6013 /* LLMService.swift */; };
+		3032329B54EE736299566093 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF923CC8AFFE12D8B4E71FC9 /* ChatViewModel.swift */; };
+		37ACDAA0A5BEB501BA271C0C /* LLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */; };
+		3B556E6426A27D5CF3C45F0B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000EDA03DCBF63F36397EB4 /* SettingsView.swift */; };
+		51B63328B59ECC391EA15AD0 /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3704B6D627F53C260813845A /* MessageBubble.swift */; };
+		54E86156189656F088A1750B /* DocumentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA865D22A09829EE2001197D /* DocumentsView.swift */; };
+		604C4E4B1CD6BD265520FE80 /* AnthropicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */; };
+		7779DB8396EAC60C6B013EB5 /* IndexedDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126169AE8B1B14D3A048FB4B /* IndexedDocument.swift */; };
+		784E28EA2FAB3BA15A47067A /* Chunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2C72E7B8897539F47E4422 /* Chunk.swift */; };
+		85F49A6D686DC0E89AD200CE /* ChunkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2800900A9B7B6AF101D17691 /* ChunkPreview.swift */; };
+		89760D7882CDD82C66E33D28 /* DatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */; };
+		AC85CA2502016275C0888E86 /* IndexingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F1FF271718D84F64B12B343 /* IndexingViewModel.swift */; };
+		AC93F835FD614BEAB51A92F7 /* sqlite-vec.c in Sources */ = {isa = PBXBuildFile; fileRef = 3D09376B06A823F9382D10A9 /* sqlite-vec.c */; };
+		B52A8D6CEC28E6885CC337BF /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */; };
+		BB1331DA8BABF022F8B80F3C /* EmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945988654CC4701EADA5B0C8 /* EmbeddingService.swift */; };
+		CD3B3A7D87F0D83CB320B323 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0596AF2F81926684DFB4105E /* ChatView.swift */; };
+		D3D5C717F7A05E84A73C3D07 /* ChunkpadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F51C2CB36117BE12326326DD /* ChunkpadApp.swift */; };
+		D7E400457DC38BCADCD6A647 /* IndexingProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */; };
+		D8D2F77EC5147C9A78C21091 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */; };
+		DFCE4EDB949252D97D69AD37 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 33F82CA7FBC8ABEBF8B09348 /* MLXEmbedders */; };
+		E9AAFC0BD4F0E58AB0071C9D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E7984A1A2036F7B8DA721723 /* Assets.xcassets */; };
+		FA80B2A8AB663CAE0CF8EEFB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B7CEAEA72991BE0CDBCF557 /* AppState.swift */; };
+		FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E8DD3A89A1EA39273F1EF /* GlassCard.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0596AF2F81926684DFB4105E /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		126169AE8B1B14D3A048FB4B /* IndexedDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexedDocument.swift; sourceTree = "<group>"; };
+		126F9250109F47C5BF26533B /* Chunkpad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chunkpad.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		15B9C791BBBB1C9635A973A4 /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
+		260E8DD3A89A1EA39273F1EF /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
+		2800900A9B7B6AF101D17691 /* ChunkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkPreview.swift; sourceTree = "<group>"; };
+		2B7CEAEA72991BE0CDBCF557 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		2F1FF271718D84F64B12B343 /* IndexingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexingViewModel.swift; sourceTree = "<group>"; };
+		32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexingProgressView.swift; sourceTree = "<group>"; };
+		3704B6D627F53C260813845A /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
+		381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
+		3D09376B06A823F9382D10A9 /* sqlite-vec.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "sqlite-vec.c"; sourceTree = "<group>"; };
+		55054113AD5B984E336F6013 /* LLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMService.swift; sourceTree = "<group>"; };
+		599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
+		945988654CC4701EADA5B0C8 /* EmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingService.swift; sourceTree = "<group>"; };
+		977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMProvider.swift; sourceTree = "<group>"; };
+		A000EDA03DCBF63F36397EB4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIClient.swift; sourceTree = "<group>"; };
+		ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicClient.swift; sourceTree = "<group>"; };
+		AD2C72E7B8897539F47E4422 /* Chunk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chunk.swift; sourceTree = "<group>"; };
+		B5EAF502D927E2781BDBCC67 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		B74C9E8AE95D95D0EF721096 /* sqlite-vec.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "sqlite-vec.h"; sourceTree = "<group>"; };
+		C41B9E26B839EAEFE533DDAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D8166A0FF8CE1B59E34044DB /* DocumentProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentProcessor.swift; sourceTree = "<group>"; };
+		DF923CC8AFFE12D8B4E71FC9 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		E7984A1A2036F7B8DA721723 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E7A9E1A806AE6FBE3997F98A /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
+		EE0750CEACD2B0C9EC986AE2 /* Chunkpad.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Chunkpad.entitlements; sourceTree = "<group>"; };
+		F51C2CB36117BE12326326DD /* ChunkpadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkpadApp.swift; sourceTree = "<group>"; };
+		FA865D22A09829EE2001197D /* DocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentsView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C9E105E8D721F5E3D3D96625 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DFCE4EDB949252D97D69AD37 /* MLXEmbedders in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		041A66E2EC65F1D8591920EF /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				260E8DD3A89A1EA39273F1EF /* GlassCard.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		271254577A98C3FA4DAC2AEA /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				DF923CC8AFFE12D8B4E71FC9 /* ChatViewModel.swift */,
+				2F1FF271718D84F64B12B343 /* IndexingViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		311FA55141E5927C0877BD33 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				E7984A1A2036F7B8DA721723 /* Assets.xcassets */,
+				EE0750CEACD2B0C9EC986AE2 /* Chunkpad.entitlements */,
+				C41B9E26B839EAEFE533DDAF /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		38C0E4327B1F8D02939A4129 /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				0596AF2F81926684DFB4105E /* ChatView.swift */,
+				2800900A9B7B6AF101D17691 /* ChunkPreview.swift */,
+				3704B6D627F53C260813845A /* MessageBubble.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		6D184B0DA4A832E848DC0AD8 /* Chunkpad */ = {
+			isa = PBXGroup;
+			children = (
+				7863CBD9F272B623F303BFAB /* App */,
+				D1C4DCC3389E4B3F1DF87774 /* Models */,
+				311FA55141E5927C0877BD33 /* Resources */,
+				74A4619939CCF77AB2A8ECF1 /* Services */,
+				271254577A98C3FA4DAC2AEA /* ViewModels */,
+				C59A9AAEE50B7438F6336129 /* Views */,
+			);
+			path = Chunkpad;
+			sourceTree = "<group>";
+		};
+		74A4619939CCF77AB2A8ECF1 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */,
+				599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */,
+				D8166A0FF8CE1B59E34044DB /* DocumentProcessor.swift */,
+				945988654CC4701EADA5B0C8 /* EmbeddingService.swift */,
+				55054113AD5B984E336F6013 /* LLMService.swift */,
+				381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */,
+				AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		7677FBE86444269ED6F5DE99 /* Documents */ = {
+			isa = PBXGroup;
+			children = (
+				FA865D22A09829EE2001197D /* DocumentsView.swift */,
+				32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */,
+			);
+			path = Documents;
+			sourceTree = "<group>";
+		};
+		7863CBD9F272B623F303BFAB /* App */ = {
+			isa = PBXGroup;
+			children = (
+				2B7CEAEA72991BE0CDBCF557 /* AppState.swift */,
+				F51C2CB36117BE12326326DD /* ChunkpadApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		837EF2AFF3EF4B99DF877A04 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				A000EDA03DCBF63F36397EB4 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		AEFAC4AB33903BE465052F0E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				126F9250109F47C5BF26533B /* Chunkpad.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BD84A3C12010F73BC0F3D852 /* CSQLiteVec */ = {
+			isa = PBXGroup;
+			children = (
+				F89DC7789929B50770EA4C6C /* include */,
+				3D09376B06A823F9382D10A9 /* sqlite-vec.c */,
+			);
+			path = CSQLiteVec;
+			sourceTree = "<group>";
+		};
+		C59A9AAEE50B7438F6336129 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				38C0E4327B1F8D02939A4129 /* Chat */,
+				041A66E2EC65F1D8591920EF /* Components */,
+				7677FBE86444269ED6F5DE99 /* Documents */,
+				837EF2AFF3EF4B99DF877A04 /* Settings */,
+				B5EAF502D927E2781BDBCC67 /* MainView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		C80D80D01CC0BE5A588F2667 = {
+			isa = PBXGroup;
+			children = (
+				6D184B0DA4A832E848DC0AD8 /* Chunkpad */,
+				F486BC44CDD4D92FF13C3180 /* Vendor */,
+				AEFAC4AB33903BE465052F0E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D1C4DCC3389E4B3F1DF87774 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				AD2C72E7B8897539F47E4422 /* Chunk.swift */,
+				126169AE8B1B14D3A048FB4B /* IndexedDocument.swift */,
+				977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */,
+				E7A9E1A806AE6FBE3997F98A /* Message.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		F486BC44CDD4D92FF13C3180 /* Vendor */ = {
+			isa = PBXGroup;
+			children = (
+				BD84A3C12010F73BC0F3D852 /* CSQLiteVec */,
+			);
+			path = Vendor;
+			sourceTree = "<group>";
+		};
+		F89DC7789929B50770EA4C6C /* include */ = {
+			isa = PBXGroup;
+			children = (
+				15B9C791BBBB1C9635A973A4 /* module.modulemap */,
+				B74C9E8AE95D95D0EF721096 /* sqlite-vec.h */,
+			);
+			path = include;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CA019AE13FCAE6A5E5E9A2C4 /* Chunkpad */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3D537FCE2D622D4F8ADE1C0C /* Build configuration list for PBXNativeTarget "Chunkpad" */;
+			buildPhases = (
+				69C10B744D59412ED3684A35 /* Sources */,
+				CD7FE4C7CFD4E587FE075951 /* Resources */,
+				C9E105E8D721F5E3D3D96625 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Chunkpad;
+			packageProductDependencies = (
+				33F82CA7FBC8ABEBF8B09348 /* MLXEmbedders */,
+			);
+			productName = Chunkpad;
+			productReference = 126F9250109F47C5BF26533B /* Chunkpad.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E38F5B058795CA138BAB62E2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+			};
+			buildConfigurationList = E15929BB4E827DF140FBBBDD /* Build configuration list for PBXProject "Chunkpad" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C80D80D01CC0BE5A588F2667;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				821DE3C6835FE6508EC1D1D1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CA019AE13FCAE6A5E5E9A2C4 /* Chunkpad */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		CD7FE4C7CFD4E587FE075951 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E9AAFC0BD4F0E58AB0071C9D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		69C10B744D59412ED3684A35 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				604C4E4B1CD6BD265520FE80 /* AnthropicClient.swift in Sources */,
+				FA80B2A8AB663CAE0CF8EEFB /* AppState.swift in Sources */,
+				CD3B3A7D87F0D83CB320B323 /* ChatView.swift in Sources */,
+				3032329B54EE736299566093 /* ChatViewModel.swift in Sources */,
+				784E28EA2FAB3BA15A47067A /* Chunk.swift in Sources */,
+				85F49A6D686DC0E89AD200CE /* ChunkPreview.swift in Sources */,
+				D3D5C717F7A05E84A73C3D07 /* ChunkpadApp.swift in Sources */,
+				89760D7882CDD82C66E33D28 /* DatabaseService.swift in Sources */,
+				0E1F606BD786DD5AC3290517 /* DocumentProcessor.swift in Sources */,
+				54E86156189656F088A1750B /* DocumentsView.swift in Sources */,
+				BB1331DA8BABF022F8B80F3C /* EmbeddingService.swift in Sources */,
+				FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */,
+				7779DB8396EAC60C6B013EB5 /* IndexedDocument.swift in Sources */,
+				D7E400457DC38BCADCD6A647 /* IndexingProgressView.swift in Sources */,
+				AC85CA2502016275C0888E86 /* IndexingViewModel.swift in Sources */,
+				37ACDAA0A5BEB501BA271C0C /* LLMProvider.swift in Sources */,
+				2A8B52D2A559D4C3199C5307 /* LLMService.swift in Sources */,
+				162BFB1F401973D6B5F472A5 /* MainView.swift in Sources */,
+				09A37CAE3717A5D0BA1807C2 /* Message.swift in Sources */,
+				51B63328B59ECC391EA15AD0 /* MessageBubble.swift in Sources */,
+				D8D2F77EC5147C9A78C21091 /* OllamaClient.swift in Sources */,
+				B52A8D6CEC28E6885CC337BF /* OpenAIClient.swift in Sources */,
+				3B556E6426A27D5CF3C45F0B /* SettingsView.swift in Sources */,
+				AC93F835FD614BEAB51A92F7 /* sqlite-vec.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		29B16390DD0F3ED185DE7C73 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = Chunkpad;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.2;
+			};
+			name = Release;
+		};
+		75D4DFA27B40D93A70CB909B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Chunkpad/Resources/Chunkpad.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_PREVIEWS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"SQLITE_CORE=1",
+				);
+				INFOPLIST_FILE = Chunkpad/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = "-lsqlite3";
+				PRODUCT_BUNDLE_IDENTIFIER = com.chunkpad.app;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		94702DB1B178AD961E6C1FCA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = Chunkpad;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.2;
+			};
+			name = Debug;
+		};
+		D0941FCDB8244893D53FBA1A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Chunkpad/Resources/Chunkpad.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_PREVIEWS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"SQLITE_CORE=1",
+				);
+				INFOPLIST_FILE = Chunkpad/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = "-lsqlite3";
+				PRODUCT_BUNDLE_IDENTIFIER = com.chunkpad.app;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3D537FCE2D622D4F8ADE1C0C /* Build configuration list for PBXNativeTarget "Chunkpad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0941FCDB8244893D53FBA1A /* Debug */,
+				75D4DFA27B40D93A70CB909B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E15929BB4E827DF140FBBBDD /* Build configuration list for PBXProject "Chunkpad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				94702DB1B178AD961E6C1FCA /* Debug */,
+				29B16390DD0F3ED185DE7C73 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		821DE3C6835FE6508EC1D1D1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.29.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		33F82CA7FBC8ABEBF8B09348 /* MLXEmbedders */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 821DE3C6835FE6508EC1D1D1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXEmbedders;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E38F5B058795CA138BAB62E2 /* Project object */;
+}
