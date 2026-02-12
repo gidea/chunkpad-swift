@@ -258,16 +258,37 @@ struct DocumentProcessor: Sendable {
             )]
         }
 
-        // Split by paragraphs first
-        let paragraphs = cleaned.components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
+        // Single-pass paragraph splitting: scan for "\n\n" boundaries without
+        // allocating an intermediate [String] array. Paragraphs are trimmed inline.
         var chunks: [ProcessedChunk] = []
         var currentChunk = ""
         var chunkIndex = 0
+        var hasParagraphs = false
 
-        for paragraph in paragraphs {
+        var searchStart = cleaned.startIndex
+        while searchStart < cleaned.endIndex {
+            // Find next "\n\n" boundary
+            let paragraphEnd: String.Index
+            if let range = cleaned.range(of: "\n\n", range: searchStart..<cleaned.endIndex) {
+                paragraphEnd = range.lowerBound
+                hasParagraphs = true
+            } else {
+                paragraphEnd = cleaned.endIndex
+            }
+
+            // Extract and trim paragraph
+            let rawParagraph = cleaned[searchStart..<paragraphEnd]
+            let paragraph = rawParagraph.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Advance past the "\n\n" delimiter (or to end)
+            if paragraphEnd < cleaned.endIndex {
+                searchStart = cleaned.index(paragraphEnd, offsetBy: 2, limitedBy: cleaned.endIndex) ?? cleaned.endIndex
+            } else {
+                searchStart = cleaned.endIndex
+            }
+
+            guard !paragraph.isEmpty else { continue }
+
             if currentChunk.count + paragraph.count + 2 > chunkSizeChars && !currentChunk.isEmpty {
                 // Emit current chunk
                 chunks.append(ProcessedChunk(
@@ -293,7 +314,7 @@ struct DocumentProcessor: Sendable {
         // Emit last chunk
         if !currentChunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             chunks.append(ProcessedChunk(
-                title: paragraphs.count > 1 ? "\(title) [\(chunkIndex + 1)]" : title,
+                title: hasParagraphs ? "\(title) [\(chunkIndex + 1)]" : title,
                 content: currentChunk,
                 documentType: documentType,
                 slideNumber: slideNumber,

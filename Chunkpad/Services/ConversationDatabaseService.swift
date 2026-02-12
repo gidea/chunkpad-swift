@@ -30,19 +30,27 @@ actor ConversationDatabaseService {
 
     private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    private nonisolated func formatDate(_ date: Date) -> String {
+    /// Cached date formatters to avoid repeated allocation in hot paths.
+    /// nonisolated(unsafe) is safe here: ISO8601DateFormatter is thread-safe for
+    /// formatting/parsing once configured, and these are immutable after init.
+    nonisolated(unsafe) private static let dateFormatterWithFrac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: date)
+        return f
+    }()
+    nonisolated(unsafe) private static let dateFormatterWithoutFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private nonisolated func formatDate(_ date: Date) -> String {
+        Self.dateFormatterWithFrac.string(from: date)
     }
 
     private nonisolated func parseDate(_ s: String) -> Date {
-        let withFrac = ISO8601DateFormatter()
-        withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = withFrac.date(from: s) { return d }
-        let withoutFrac = ISO8601DateFormatter()
-        withoutFrac.formatOptions = [.withInternetDateTime]
-        return withoutFrac.date(from: s) ?? Date()
+        if let d = Self.dateFormatterWithFrac.date(from: s) { return d }
+        return Self.dateFormatterWithoutFrac.date(from: s) ?? Date()
     }
 
     init() {

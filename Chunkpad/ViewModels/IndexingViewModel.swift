@@ -60,6 +60,12 @@ final class IndexingViewModel {
     var hasModifiedChunkFiles = false
     /// User toggles for include/exclude. Nil = use default (embedded means included, else true).
     var chunkInclusionOverrides: [String: Bool] = [:]
+    /// Cache for reviewableChunks keyed by file path. Invalidated when embeddedChunkIDs or overrides change.
+    private var reviewableChunksCache: [String: [ReviewableChunk]] = [:]
+    /// Snapshot of embeddedChunkIDs count when cache was last valid.
+    private var cachedEmbeddedIDsCount = 0
+    /// Snapshot of overrides count when cache was last valid.
+    private var cachedOverridesCount = 0
 
     // MARK: - Dependencies
 
@@ -67,6 +73,13 @@ final class IndexingViewModel {
     private let chunkFileService = ChunkFileService()
     private let embedder = EmbeddingService()
     private let database = DatabaseService()
+    private let bookmarkService = BookmarkService()
+
+    /// Whether the database has been connected at least once this session.
+    private var isDatabaseConnected = false
+
+    /// URLs currently under security-scoped access (need stopAccessing on cleanup).
+    private var accessedURLs: Set<URL> = []
 
     /// Optional reference to the shared AppState for updating global embedding status
     /// and reading chunking settings.
@@ -74,12 +87,59 @@ final class IndexingViewModel {
 
     init() {}
 
+    /// Connects to the database if not already connected this session.
+    /// Avoids repeated actor hops when the connection is already established.
+    private func ensureDatabaseConnected() async throws {
+        if !isDatabaseConnected {
+            try await database.connect()
+            isDatabaseConnected = true
+        }
+    }
+
     /// Loads indexed folders and embedded chunk IDs from the database. Call from DocumentsView.onAppear.
+    /// Resolves security-scoped bookmarks and starts access for each folder.
     func loadFromDatabase() async {
         do {
-            try await database.connect()
-            indexedFolders = try await database.fetchIndexedFolders()
+            try await ensureDatabaseConnected()
+            var folders = try await database.fetchIndexedFolders()
             embeddedChunkIDs = try await database.fetchEmbeddedChunkRefIds()
+
+            // Resolve bookmarks and start security-scoped access
+            for i in folders.indices {
+                guard let bookmarkData = folders[i].bookmarkData else {
+                    folders[i].isAccessible = false
+                    continue
+                }
+                do {
+                    let (url, refreshedBookmark) = try bookmarkService.resolveAndAccess(bookmarkData)
+                    accessedURLs.insert(url)
+                    folders[i].isAccessible = true
+                    // Update URL if it changed (e.g. folder was moved)
+                    let resolvedStd = url.standardized
+                    let folderStd = folders[i].rootURL.standardized
+                    if resolvedStd != folderStd {
+                        folders[i] = IndexedFolder(
+                            rootURL: url,
+                            chunksRootURL: folders[i].chunksRootURL,
+                            id: folders[i].id,
+                            createdAt: folders[i].createdAt,
+                            lastProcessedAt: folders[i].lastProcessedAt,
+                            fileCount: folders[i].fileCount,
+                            chunkCount: folders[i].chunkCount,
+                            bookmarkData: refreshedBookmark ?? bookmarkData
+                        )
+                    }
+                    // Refresh stale bookmark in DB
+                    if let refreshed = refreshedBookmark, let folderId = folders[i].id {
+                        try? await database.updateFolderBookmark(id: folderId, bookmarkData: refreshed)
+                        folders[i].bookmarkData = refreshed
+                    }
+                } catch {
+                    folders[i].isAccessible = false
+                    print("Bookmark resolution failed for \(folders[i].rootURL.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
+            indexedFolders = folders
         } catch {
             indexedFolders = []
             embeddedChunkIDs = []
@@ -92,12 +152,12 @@ final class IndexingViewModel {
     /// discover files → extract text → build markdown → chunk. No embeddings, no DB.
     func selectAndProcessFolder() async {
         guard !isIndexing else { return }
-        guard let folderURL = await pickFolder() else { return }
-        await processFolder(at: folderURL)
+        guard let result = await pickFolder() else { return }
+        await processFolder(at: result.url, bookmarkData: result.bookmarkData)
     }
 
     /// Extracts text, chunks, writes markdown files to {folder}_chunks/, discovers and builds tree.
-    func processFolder(at url: URL) async {
+    func processFolder(at url: URL, bookmarkData: Data? = nil) async {
         isIndexing = true
         error = nil
         progress = 0
@@ -147,8 +207,8 @@ final class IndexingViewModel {
                 lastKnownModificationDates[info.fileURL.path] = info.lastModified
             }
             chunkFileTree = ChunkFileTree(chunkFiles: chunkFiles, chunksRootURL: chunksRoot)
-            let folder = IndexedFolder(rootURL: rootURL, chunksRootURL: chunksRoot, fileCount: totalFiles, chunkCount: totalChunks)
-            try await database.connect()
+            let folder = IndexedFolder(rootURL: rootURL, chunksRootURL: chunksRoot, fileCount: totalFiles, chunkCount: totalChunks, bookmarkData: bookmarkData)
+            try await ensureDatabaseConnected()
             try await database.insertIndexedFolder(folder, fileCount: totalFiles, chunkCount: totalChunks)
             indexedFolders = try await database.fetchIndexedFolders()
 
@@ -173,9 +233,9 @@ final class IndexingViewModel {
         guard !isIndexing else { return }
 
         // Show folder picker
-        guard let folderURL = await pickFolder() else { return }
+        guard let result = await pickFolder() else { return }
 
-        await indexFolder(at: folderURL)
+        await indexFolder(at: result.url)
     }
 
     /// Index all documents in a given folder (full pipeline: embed + DB).
@@ -190,7 +250,7 @@ final class IndexingViewModel {
 
         do {
             // 1. Connect to database
-            try await database.connect()
+            try await ensureDatabaseConnected()
 
             // 2. Download & load embedding model (lazy — only downloads if not cached)
             currentDocument = "Preparing embedding model..."
@@ -285,7 +345,7 @@ final class IndexingViewModel {
         error = nil
         isDownloadingModel = false
         do {
-            try await database.connect()
+            try await ensureDatabaseConnected()
             currentDocument = "Preparing embedding model..."
             isDownloadingModel = true
             await embedder.setStatusCallback { [weak self] status in
@@ -367,18 +427,59 @@ final class IndexingViewModel {
         hasModifiedChunkFiles = false
     }
 
-    /// Builds ReviewableChunks for a file; isIncluded from overrides or default true.
+    /// Builds ReviewableChunks for a file; computes embeddingStatus from embeddedChunkIDs and inclusion state.
+    /// Results are memoized and invalidated when embeddedChunkIDs or chunkInclusionOverrides change.
     func reviewableChunks(for fileInfo: ChunkFileInfo) -> [ReviewableChunk] {
-        fileInfo.chunks.enumerated().map { index, pc in
+        // Invalidate cache when underlying data changes
+        if embeddedChunkIDs.count != cachedEmbeddedIDsCount || chunkInclusionOverrides.count != cachedOverridesCount {
+            reviewableChunksCache.removeAll()
+            cachedEmbeddedIDsCount = embeddedChunkIDs.count
+            cachedOverridesCount = chunkInclusionOverrides.count
+        }
+
+        let cacheKey = fileInfo.fileURL.path
+        if let cached = reviewableChunksCache[cacheKey] {
+            return cached
+        }
+
+        let result = fileInfo.chunks.enumerated().map { index, pc in
             let id = ReviewableChunk.chunkID(filePath: fileInfo.fileURL.path, index: index)
             let isIncluded = chunkInclusionOverrides[id] ?? true
-            return ReviewableChunk(id: id, processedChunk: pc, isIncluded: isIncluded)
+            let status: ChunkEmbeddingStatus
+            if !isIncluded {
+                status = .excluded
+            } else if embeddedChunkIDs.contains(id) {
+                status = .embedded
+            } else {
+                status = .pending
+            }
+            return ReviewableChunk(id: id, processedChunk: pc, isIncluded: isIncluded, embeddingStatus: status)
+        }
+        reviewableChunksCache[cacheKey] = result
+        return result
+    }
+
+    /// Computes aggregate embedding status for a file's chunks.
+    func fileAggregateStatus(for fileInfo: ChunkFileInfo) -> FileEmbeddingStatus {
+        let chunks = reviewableChunks(for: fileInfo)
+        let included = chunks.filter { $0.isIncluded }
+        guard !included.isEmpty else { return .noneEmbedded }
+
+        let embeddedCount = included.filter { $0.embeddingStatus == .embedded }.count
+        if embeddedCount == included.count {
+            return .allEmbedded
+        } else if embeddedCount > 0 {
+            return .partiallyEmbedded
+        } else {
+            return .noneEmbedded
         }
     }
 
     func toggleChunkInclusion(id: String) {
         let current = chunkInclusionOverrides[id] ?? true
         chunkInclusionOverrides[id] = !current
+        // Invalidate memoized reviewable chunks
+        reviewableChunksCache.removeAll()
     }
 
     /// All reviewable chunks from the tree for Embed action; only returns those with isIncluded.
@@ -406,18 +507,106 @@ final class IndexingViewModel {
     /// Returns an empty array if the database is not connected or the query fails.
     func loadIndexedDocumentsFromDatabase() async -> [IndexedDocument] {
         do {
-            try await database.connect()
+            try await ensureDatabaseConnected()
             return try await database.listDocuments()
         } catch {
             return []
         }
     }
 
+    // MARK: - Folder Lifecycle
+
+    /// Removes a folder and all its associated data from the database.
+    /// Optionally deletes chunk files from disk.
+    func removeFolder(_ folder: IndexedFolder, deleteChunkFiles: Bool) async {
+        guard let folderId = folder.id else { return }
+        do {
+            try await ensureDatabaseConnected()
+            try await database.deleteIndexedFolderCascade(id: folderId, rootPath: folder.rootURL.path)
+
+            if deleteChunkFiles {
+                chunkFileService.deleteChunksDirectory(for: folder.rootURL)
+            }
+
+            // Stop security-scoped access
+            if accessedURLs.contains(folder.rootURL) {
+                bookmarkService.stopAccessing(url: folder.rootURL)
+                accessedURLs.remove(folder.rootURL)
+            }
+
+            // Reset state
+            indexedFolders.removeAll { $0.id == folderId }
+            if indexedFolder == nil {
+                chunkFileTree = nil
+                lastKnownModificationDates = [:]
+                chunkInclusionOverrides = [:]
+                hasModifiedChunkFiles = false
+            }
+
+            // Update global count
+            if let appState {
+                appState.indexedDocumentCount = (try? await database.documentCount()) ?? 0
+            }
+            embeddedChunkIDs = (try? await database.fetchEmbeddedChunkRefIds()) ?? []
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Re-processes an existing folder (re-extract, re-chunk, rebuild tree).
+    func reprocessFolder(_ folder: IndexedFolder) async {
+        await processFolder(at: folder.rootURL, bookmarkData: folder.bookmarkData)
+    }
+
+    /// Re-embeds all approved chunks from the current tree.
+    func reembedAllChunks() async {
+        let chunks = approvedChunksForEmbed()
+        guard !chunks.isEmpty else { return }
+        await embedApprovedChunks(from: chunks)
+    }
+
+    /// Deletes all data from all tables. Optionally deletes chunk files from disk.
+    func clearAllData(deleteChunkFiles: Bool) async {
+        do {
+            try await ensureDatabaseConnected()
+
+            if deleteChunkFiles {
+                for folder in indexedFolders {
+                    chunkFileService.deleteChunksDirectory(for: folder.rootURL)
+                }
+            }
+
+            try await database.deleteAllData()
+            stopAllAccess()
+
+            indexedFolders = []
+            chunkFileTree = nil
+            lastKnownModificationDates = [:]
+            chunkInclusionOverrides = [:]
+            hasModifiedChunkFiles = false
+            embeddedChunkIDs = []
+
+            if let appState {
+                appState.indexedDocumentCount = 0
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Stops security-scoped access for all tracked URLs. Call on app termination.
+    func stopAllAccess() {
+        for url in accessedURLs {
+            bookmarkService.stopAccessing(url: url)
+        }
+        accessedURLs.removeAll()
+    }
+
     // MARK: - Folder Picker
 
     @MainActor
-    private func pickFolder() async -> URL? {
-        await withCheckedContinuation { continuation in
+    private func pickFolder() async -> (url: URL, bookmarkData: Data?)? {
+        let result = await withCheckedContinuation { continuation in
             let panel = NSOpenPanel()
             panel.canChooseFiles = false
             panel.canChooseDirectories = true
@@ -429,5 +618,11 @@ final class IndexingViewModel {
                 continuation.resume(returning: response == .OK ? panel.url : nil)
             }
         }
+
+        guard let url = result else { return nil }
+
+        // Create security-scoped bookmark while we still have NSOpenPanel access
+        let bookmarkData = try? bookmarkService.createBookmark(for: url)
+        return (url, bookmarkData)
     }
 }

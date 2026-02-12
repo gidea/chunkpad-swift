@@ -363,12 +363,16 @@ final class ChatViewModel {
         guard !pinnedDocumentIDs.isEmpty else { return }
 
         let existingIDs = Set(scoredChunks.map(\.id))
+        // Collect all pinned chunks first, then prepend once to avoid O(n²) inserts at index 0.
+        var pinnedChunks: [ScoredChunk] = []
         for docID in pinnedDocumentIDs {
             let chunks = try await database.chunksForDocument(documentID: docID)
             for chunk in chunks where !existingIDs.contains(chunk.id) {
-                // Pinned chunks get a score of 1.0 so they sort to the top
-                scoredChunks.insert(ScoredChunk(chunk: chunk, relevanceScore: 1.0), at: 0)
+                pinnedChunks.append(ScoredChunk(chunk: chunk, relevanceScore: 1.0))
             }
+        }
+        if !pinnedChunks.isEmpty {
+            scoredChunks = pinnedChunks + scoredChunks
         }
     }
 
@@ -390,16 +394,17 @@ final class ChatViewModel {
             """
         ))
 
-        // Build the chunk context (only included chunks)
-        let chunksContext = included.enumerated().map { index, scored in
-            """
-            [Chunk \(index + 1): \(scored.chunk.id)] (relevance: \(scored.relevancePercent))
-            Source: \(scored.chunk.title)
-            \(scored.chunk.slideNumber.map { "Slide \($0)" } ?? "")
-
-            \(scored.chunk.content)
-            """
-        }.joined(separator: "\n\n---\n\n")
+        // Build the chunk context using a single string to avoid intermediate array allocations.
+        var chunksContext = ""
+        for (index, scored) in included.enumerated() {
+            if index > 0 { chunksContext += "\n\n---\n\n" }
+            chunksContext += "[Chunk \(index + 1): \(scored.chunk.id)] (relevance: \(scored.relevancePercent))\n"
+            chunksContext += "Source: \(scored.chunk.title)\n"
+            if let slide = scored.chunk.slideNumber {
+                chunksContext += "Slide \(slide)\n"
+            }
+            chunksContext += "\n\(scored.chunk.content)"
+        }
 
         // User message with context
         contextMessages.append(ChatMessage(
