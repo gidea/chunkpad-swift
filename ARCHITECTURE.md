@@ -200,11 +200,13 @@ Chunk markdown files are stored at `{selectedFolder}/_chunks/` (inside the user-
 │  Mode: WAL (Write-Ahead Logging)                                │
 │                                                                 │
 │  Tables:                                                        │
-│  ├─ documents        Regular table (metadata: name, path, type) │
-│  ├─ chunks           Regular table (content, title, metadata)   │
-│  ├─ vec_chunks       vec0 virtual table (float[768] cosine)     │
-│  ├─ chunks_fts       FTS5 virtual table (full-text search)      │
-│  └─ messages         Regular table (chat history)               │
+│  ├─ documents          Regular table (metadata: name, path, type)│
+│  ├─ chunks             Regular table (content, title, metadata)  │
+│  ├─ vec_chunks         vec0 virtual table (float[768] cosine)    │
+│  ├─ chunks_fts         FTS5 virtual table (full-text search)     │
+│  ├─ indexed_folders    Regular table (folder paths, counts)      │
+│  ├─ embedded_chunk_refs Regular table (embed tracking)           │
+│  └─ schema_version     Migration version tracking                │
 │                                                                 │
 │  sqlite-vec: Vendored C source, compiled with SQLITE_CORE,     │
 │              linked against system libsqlite3                   │
@@ -268,7 +270,7 @@ User clicks "Add Folder"
             → Format: ## Chunk 1\ncontent\n\n## Chunk 2\n...
         → ChunkFileService.discoverChunkFiles() → [ChunkFileInfo]
         → ChunkFileTree(chunkFiles:chunksRootURL:) → tree for sidebar
-        → IndexedFolder persisted to UserDefaults (rootURL + chunksRootURL)
+        → IndexedFolder persisted to DB (rootURL + chunksRootURL)
 ```
 
 **Step 2: Embed (user reviews, then commits)**
@@ -288,7 +290,7 @@ User reviews chunks in tree sidebar
                 → INSERT into chunks (text)
                 → INSERT into vec_chunks (float[768] vector)
                 → FTS5 trigger auto-syncs chunks_fts
-        → embeddedChunkIDs updated and persisted to UserDefaults
+        → embeddedChunkIDs updated and persisted to DB (embedded_chunk_refs)
         → AppState.indexedDocumentCount updated
 ```
 
@@ -429,26 +431,41 @@ CREATE VIRTUAL TABLE vec_chunks USING vec0(
     +source_path TEXT
 );
 
--- Full-text search index
+-- Full-text search index (content-sync with chunks table)
 CREATE VIRTUAL TABLE chunks_fts USING fts5(
-    chunk_id UNINDEXED,
     title,
-    content
+    content,
+    content='chunks',
+    content_rowid='rowid'
 );
 
 -- Auto-sync FTS with chunks table
 CREATE TRIGGER chunks_ai AFTER INSERT ON chunks BEGIN
-    INSERT INTO chunks_fts(chunk_id, title, content)
-    VALUES (new.id, new.title, new.content);
+    INSERT INTO chunks_fts(rowid, title, content)
+    VALUES (new.rowid, new.title, new.content);
 END;
 
--- Chat history
-CREATE TABLE messages (
+-- Indexed folders (persisted folder paths and counts)
+CREATE TABLE indexed_folders (
     id TEXT PRIMARY KEY,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    referenced_chunk_ids TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    root_path TEXT NOT NULL UNIQUE,
+    chunks_root_path TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_processed_at TEXT,
+    file_count INTEGER DEFAULT 0,
+    chunk_count INTEGER DEFAULT 0
+);
+
+-- Embedded chunk tracking (which chunks have been embedded)
+CREATE TABLE embedded_chunk_refs (
+    chunk_ref_id TEXT PRIMARY KEY,
+    chunk_id TEXT,
+    embedded_at TEXT NOT NULL
+);
+
+-- Schema migration version tracking
+CREATE TABLE schema_version (
+    version INTEGER PRIMARY KEY
 );
 ```
 
