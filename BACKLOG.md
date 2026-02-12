@@ -143,12 +143,12 @@ Write a clear reference for what belongs where, so future contributors don't acc
 
 ### Current state
 
-- Single folder tracked (most recent only)
-- Chunk tree sidebar shows files but no visual distinction between embedded/pending chunks
-- No way to delete indexed documents or folders
-- No way to re-process a folder without the folder picker
-- Modified file detection only on app activation
-- Flat document list as fallback has no actions
+- Single folder tracked (most recent only) — multi-folder DB support ready (2.1 remaining for UI)
+- Chunk tree sidebar shows files with embedded/pending/excluded status badges (2.4 ✅)
+- Folder lifecycle: remove, re-process, re-embed, clear all via toolbar "..." menu (2.2 ✅)
+- Security-scoped bookmarks persist folder access across launches (2.7 ✅)
+- Modified file detection on app activation with re-embed prompt
+- Inaccessible folder banner with re-select and remove actions
 
 ### Tasks
 
@@ -174,22 +174,22 @@ Users should be able to index multiple folders and see all of them in the Docume
 - User indexes a subfolder of an already-indexed folder → warn about overlap
 - Very large number of folders (>50) → consider pagination or lazy loading
 
-#### 2.2 Folder lifecycle management [P1]
+#### 2.2 Folder lifecycle management [P1] ✅
 
 Users need the ability to remove folders from their library.
 
-- [ ] **2.2.1** Add "Remove Folder" action (swipe-to-delete or context menu) on folder rows
-- [ ] **2.2.2** Removing a folder should:
-  - Delete all its documents, chunks, and embeddings from the main DB
-  - Remove its entry from `indexed_folders`
-  - Optionally delete the `_chunks/` directory on disk (ask the user)
-  - Update `AppState.indexedDocumentCount`
-- [ ] **2.2.3** Add "Re-process Folder" action that re-runs Step 1 (parse + chunk) using the stored path
-- [ ] **2.2.4** Add "Re-embed All" action that re-runs Step 2 on all included chunks
-- [ ] **2.2.5** Add "Clear All" option in toolbar to wipe the entire document library
+- [x] **2.2.1** Add "Remove Folder" action via toolbar "..." menu and confirmation dialog
+- [x] **2.2.2** Removing a folder:
+  - Cascade-deletes documents (by path prefix), chunks, vec_chunks, embedded_chunk_refs, and folder record via `deleteIndexedFolderCascade`
+  - Optionally deletes `_chunks/` directory on disk (two-option confirmation dialog)
+  - Updates `AppState.indexedDocumentCount`
+  - Stops security-scoped access for the folder
+- [x] **2.2.3** "Re-process Folder" action in toolbar "..." menu (`reprocessFolder`)
+- [x] **2.2.4** "Re-embed All Chunks" action in toolbar "..." menu (`reembedAllChunks`)
+- [x] **2.2.5** "Clear All Data…" option in toolbar with two-option confirmation dialog (`clearAllData`)
 
 **Edge cases:**
-- Remove a folder while embedding is in progress → disable or warn
+- Remove a folder while embedding is in progress → actions disabled in toolbar when `isIndexing`
 - Re-process a folder whose source files changed → overwrite `_chunks/`, mark embedded chunks as stale
 - Re-process when chunk size settings changed → regenerate all chunk files with new settings
 
@@ -255,19 +255,19 @@ When users edit chunk markdown files externally, the app must detect changes and
   - Update the parent folder's counts
 - [ ] **2.6.3** Add "Remove chunk from DB" option on individual chunks (keeps the chunk file, just removes the embedding)
 
-#### 2.7 Security-scoped bookmark persistence [P1]
+#### 2.7 Security-scoped bookmark persistence [P1] ✅
 
 `NSOpenPanel` grants temporary security-scoped access. To re-access folders across app launches (for re-processing, change detection, etc.), the app must persist security-scoped bookmarks.
 
-- [ ] **2.7.1** When user selects a folder, create a security-scoped bookmark and store it in UserDefaults or the database
-- [ ] **2.7.2** On app launch, resolve stored bookmarks and call `startAccessingSecurityScopedResource()`
-- [ ] **2.7.3** Call `stopAccessingSecurityScopedResource()` when the folder is removed from the library
-- [ ] **2.7.4** Handle bookmark resolution failure (folder moved/deleted) → show "Folder not found" status
+- [x] **2.7.1** Bookmark created in `pickFolder()` via `BookmarkService.createBookmark(for:)` and stored as BLOB in `indexed_folders.bookmark_data` (DB migration v8)
+- [x] **2.7.2** On app launch, `ChunkpadApp.initializeDatabase()` resolves all bookmarks and starts security-scoped access; `IndexingViewModel.loadFromDatabase()` does the same with stale bookmark refresh
+- [x] **2.7.3** `stopAccessingSecurityScopedResource()` called in `removeFolder()`, `clearAllData()`, and `stopAllAccess()`
+- [x] **2.7.4** Inaccessible folder banner shown in DocumentsView with "Re-select" and "Remove" actions; `isAccessible` runtime flag on `IndexedFolder`
 
 **Edge cases:**
-- Bookmark becomes stale (folder moved) → prompt user to re-select
-- App sandbox restricts bookmark creation → verify entitlement is sufficient
-- Too many active bookmarks → macOS may limit; release unused ones
+- Bookmark becomes stale (folder moved) → auto-refreshed on resolution; if stale bookmark can be resolved, new data is written back to DB
+- App sandbox restricts bookmark creation → `com.apple.security.files.bookmarks.document-scope` entitlement added
+- Too many active bookmarks → tracked in `accessedURLs` set, released on folder removal or app shutdown
 
 #### 2.8 Cancel processing and embedding [P2]
 
@@ -626,8 +626,8 @@ Suggested sprint order based on dependencies and impact:
 2. Multi-folder support (2.1) — **P1**, depends on 1.5 (✅ done)
 3. ~~Move IndexedFolder tracking to DB (1.5)~~ — ✅ done (Sprint 1)
 4. ~~Move embedded chunk IDs to DB (1.6)~~ — ✅ done (Sprint 1)
-5. Security-scoped bookmark persistence (2.7) — **P1**, blocks reliable multi-folder
-6. Folder lifecycle management (2.2) — **P1**, delete/re-process/re-embed
+5. ~~Security-scoped bookmark persistence (2.7)~~ — ✅ done (BookmarkService, DB migration v8, entitlement, app launch resolution)
+6. ~~Folder lifecycle management (2.2)~~ — ✅ done (remove, re-process, re-embed, clear all, cascade delete)
 
 ### Sprint 3: Chat Reliability (Epic 4)
 1. Fix hasChunkSelectionChanged (4.1) — **P0**, quick fix

@@ -22,6 +22,8 @@ struct ChunkpadApp: App {
             try await db.connect()
             appState.isDatabaseConnected = true
             appState.indexedDocumentCount = try await db.documentCount()
+            // Bookmark resolution is handled by IndexingViewModel.loadFromDatabase()
+            // when the user navigates to the Documents tab, avoiding duplicate work.
         } catch {
             appState.isDatabaseConnected = false
             print("Database initialization failed: \(error.localizedDescription)")

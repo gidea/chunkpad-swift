@@ -27,7 +27,7 @@ enum DatabaseError: LocalizedError, Sendable {
 actor DatabaseService {
 
     /// Current schema version. Bump when adding migrations.
-    static let currentSchemaVersion = 7
+    static let currentSchemaVersion = 9
 
     // nonisolated(unsafe) because deinit needs access and OpaquePointer is not Sendable.
     // Thread safety is guaranteed by the actor isolation — deinit only runs after
@@ -36,6 +36,9 @@ actor DatabaseService {
 
     /// The path to the SQLite database file.
     let databasePath: String
+
+    /// Cached date formatter to avoid repeated allocation in hot paths.
+    private let dateFormatter = ISO8601DateFormatter()
 
     // MARK: - Initialization
 
@@ -253,6 +256,14 @@ actor DatabaseService {
                 try execute("INSERT INTO embedded_chunk_refs_new (chunk_ref_id, chunk_id, embedded_at) SELECT chunk_ref_id, chunk_id, embedded_at FROM embedded_chunk_refs")
                 try execute("DROP TABLE embedded_chunk_refs")
                 try execute("ALTER TABLE embedded_chunk_refs_new RENAME TO embedded_chunk_refs")
+            case 8:
+                // Add security-scoped bookmark data column to indexed_folders
+                try execute("ALTER TABLE indexed_folders ADD COLUMN bookmark_data BLOB")
+            case 9:
+                // Add indexes for LIKE prefix queries used by cascade delete and chunk ref lookup
+                try execute("CREATE INDEX IF NOT EXISTS idx_chunks_source_path ON chunks(source_path)")
+                try execute("CREATE INDEX IF NOT EXISTS idx_embedded_chunk_refs_chunk_ref_id ON embedded_chunk_refs(chunk_ref_id)")
+                try execute("CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)")
             default:
                 break
             }
@@ -269,7 +280,7 @@ actor DatabaseService {
         guard let rootPath = defaults.string(forKey: "indexing_folder_root"),
               let chunksPath = defaults.string(forKey: "indexing_folder_chunks_root") else { return }
         let id = UUID().uuidString
-        let now = ISO8601DateFormatter().string(from: Date())
+        let now = dateFormatter.string(from: Date())
         try execute("""
             INSERT OR IGNORE INTO indexed_folders (id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count)
             VALUES (?, ?, ?, ?, ?, 0, 0)
@@ -281,7 +292,7 @@ actor DatabaseService {
     private func migrateEmbeddedChunkIdsFromUserDefaults() throws {
         let defaults = UserDefaults.standard
         guard let ids = defaults.stringArray(forKey: "indexing_embedded_chunk_ids"), !ids.isEmpty else { return }
-        let now = ISO8601DateFormatter().string(from: Date())
+        let now = dateFormatter.string(from: Date())
         for id in ids {
             try execute("""
                 INSERT OR IGNORE INTO embedded_chunk_refs (chunk_ref_id, chunk_id, content_hash, embedded_at)
@@ -304,7 +315,7 @@ actor DatabaseService {
             .text(doc.filePath),
             .text(doc.documentType.rawValue),
             .int(Int64(doc.chunkCount)),
-            .text(ISO8601DateFormatter().string(from: doc.indexedAt)),
+            .text(dateFormatter.string(from: doc.indexedAt)),
             .int(doc.fileSize),
         ])
     }
@@ -333,7 +344,7 @@ actor DatabaseService {
             chunk.documentType.map { .text($0) } ?? .null,
             chunk.slideNumber.map { .int(Int64($0)) } ?? .null,
             .text(chunk.sourcePath),
-            .text(ISO8601DateFormatter().string(from: chunk.createdAt)),
+            .text(dateFormatter.string(from: chunk.createdAt)),
         ])
         try insertVectorEmbedding(chunkID: chunk.id, embedding: embedding,
                                    documentType: chunk.documentType,
@@ -353,38 +364,90 @@ actor DatabaseService {
 
     func insertIndexedFolder(_ folder: IndexedFolder, fileCount: Int, chunkCount: Int) throws {
         let id = folder.id ?? UUID().uuidString
-        let now = ISO8601DateFormatter().string(from: Date())
+        let now = dateFormatter.string(from: Date())
         try execute("""
-            INSERT OR REPLACE INTO indexed_folders (id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO indexed_folders (id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count, bookmark_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, bindings: [
             .text(id),
             .text(folder.rootURL.path),
             .text(folder.chunksRootURL.path),
-            .text(folder.createdAt.map { ISO8601DateFormatter().string(from: $0) } ?? now),
+            .text(folder.createdAt.map { dateFormatter.string(from: $0) } ?? now),
             .text(now),
             .int(Int64(fileCount)),
             .int(Int64(chunkCount)),
+            folder.bookmarkData.map { .blob($0) } ?? .null,
+        ])
+    }
+
+    /// Updates just the bookmark data for an existing folder (e.g. when refreshing a stale bookmark).
+    func updateFolderBookmark(id: String, bookmarkData: Data) throws {
+        try execute("UPDATE indexed_folders SET bookmark_data = ? WHERE id = ?", bindings: [
+            .blob(bookmarkData),
+            .text(id),
         ])
     }
 
     func fetchIndexedFolders() throws -> [IndexedFolder] {
-        let formatter = ISO8601DateFormatter()
-        return try query("SELECT id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count FROM indexed_folders ORDER BY created_at DESC") { stmt in
-            IndexedFolder(
+        return try query("SELECT id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count, bookmark_data FROM indexed_folders ORDER BY created_at DESC") { stmt in
+            // Read bookmark_data BLOB (column 7)
+            var bookmarkData: Data?
+            if sqlite3_column_type(stmt, 7) != SQLITE_NULL,
+               let blobPtr = sqlite3_column_blob(stmt, 7) {
+                let blobSize = Int(sqlite3_column_bytes(stmt, 7))
+                bookmarkData = Data(bytes: blobPtr, count: blobSize)
+            }
+            return IndexedFolder(
                 rootURL: URL(fileURLWithPath: columnText(stmt, 1)),
                 chunksRootURL: URL(fileURLWithPath: columnText(stmt, 2)),
                 id: columnText(stmt, 0),
-                createdAt: columnTextOptional(stmt, 3).flatMap { formatter.date(from: $0) },
-                lastProcessedAt: columnTextOptional(stmt, 4).flatMap { formatter.date(from: $0) },
+                createdAt: columnTextOptional(stmt, 3).flatMap { self.dateFormatter.date(from: $0) },
+                lastProcessedAt: columnTextOptional(stmt, 4).flatMap { self.dateFormatter.date(from: $0) },
                 fileCount: Int(sqlite3_column_int64(stmt, 5)),
-                chunkCount: Int(sqlite3_column_int64(stmt, 6))
+                chunkCount: Int(sqlite3_column_int64(stmt, 6)),
+                bookmarkData: bookmarkData
             )
         }
     }
 
     func deleteIndexedFolder(id: String) throws {
         try execute("DELETE FROM indexed_folders WHERE id = ?", bindings: [.text(id)])
+    }
+
+    /// Cascade-deletes a folder and all its associated data:
+    /// documents (by path prefix), their chunks, vec_chunks, embedded_chunk_refs, and the folder record.
+    func deleteIndexedFolderCascade(id: String, rootPath: String) throws {
+        try performTransaction {
+            // Find all document IDs whose file_path starts with the folder's root path
+            let docIDs: [String] = try query(
+                "SELECT id FROM documents WHERE file_path LIKE ?",
+                bindings: [.text(rootPath + "%")]
+            ) { stmt in columnText(stmt, 0) }
+
+            for docID in docIDs {
+                try execute("DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)",
+                             bindings: [.text(docID)])
+                try execute("DELETE FROM chunks WHERE document_id = ?", bindings: [.text(docID)])
+            }
+            try execute("DELETE FROM documents WHERE file_path LIKE ?", bindings: [.text(rootPath + "%")])
+
+            // Delete embedded chunk refs that match the folder's chunks root path
+            try execute("DELETE FROM embedded_chunk_refs WHERE chunk_ref_id LIKE ?", bindings: [.text(rootPath + "%")])
+
+            // Delete the folder record itself
+            try execute("DELETE FROM indexed_folders WHERE id = ?", bindings: [.text(id)])
+        }
+    }
+
+    /// Deletes all data from all tables. Used for "Clear All Data" action.
+    func deleteAllData() throws {
+        try performTransaction {
+            try execute("DELETE FROM vec_chunks")
+            try execute("DELETE FROM chunks")
+            try execute("DELETE FROM documents")
+            try execute("DELETE FROM embedded_chunk_refs")
+            try execute("DELETE FROM indexed_folders")
+        }
     }
 
     // MARK: - Embedded Chunk Refs
@@ -396,7 +459,7 @@ actor DatabaseService {
         """, bindings: [
             .text(chunkRefId),
             chunkId.map { .text($0) } ?? .null,
-            .text(ISO8601DateFormatter().string(from: embeddedAt)),
+            .text(dateFormatter.string(from: embeddedAt)),
         ])
     }
 
@@ -432,7 +495,7 @@ actor DatabaseService {
                 filePath: columnText(stmt, 2),
                 documentType: .init(fromExtension: columnText(stmt, 3)),
                 chunkCount: Int(sqlite3_column_int64(stmt, 4)),
-                indexedAt: ISO8601DateFormatter().date(from: columnText(stmt, 5)) ?? .now,
+                indexedAt: self.dateFormatter.date(from: columnText(stmt, 5)) ?? .now,
                 fileSize: sqlite3_column_int64(stmt, 6)
             )
         }
@@ -640,7 +703,7 @@ actor DatabaseService {
                 documentType: columnTextOptional(stmt!, 4),
                 slideNumber: sqlite3_column_type(stmt, 5) != SQLITE_NULL ? Int(sqlite3_column_int64(stmt, 5)) : nil,
                 sourcePath: columnText(stmt!, 6),
-                createdAt: ISO8601DateFormatter().date(from: columnText(stmt!, 7)) ?? .now
+                createdAt: dateFormatter.date(from: columnText(stmt!, 7)) ?? .now
             )
             let score = scoreMap[chunk.id] ?? 0
             scoredChunks.append(ScoredChunk(chunk: chunk, relevanceScore: score))
@@ -674,7 +737,7 @@ actor DatabaseService {
                 filePath: columnText(stmt!, 2),
                 documentType: docType,
                 chunkCount: Int(sqlite3_column_int64(stmt, 4)),
-                indexedAt: ISO8601DateFormatter().date(from: columnText(stmt!, 5)) ?? .now,
+                indexedAt: dateFormatter.date(from: columnText(stmt!, 5)) ?? .now,
                 fileSize: sqlite3_column_int64(stmt, 6)
             ))
         }
@@ -704,7 +767,7 @@ actor DatabaseService {
                 documentType: columnTextOptional(stmt!, 4),
                 slideNumber: sqlite3_column_type(stmt, 5) != SQLITE_NULL ? Int(sqlite3_column_int64(stmt, 5)) : nil,
                 sourcePath: columnText(stmt!, 6),
-                createdAt: ISO8601DateFormatter().date(from: columnText(stmt!, 7)) ?? .now
+                createdAt: dateFormatter.date(from: columnText(stmt!, 7)) ?? .now
             ))
         }
         return chunks

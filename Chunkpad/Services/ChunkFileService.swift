@@ -111,11 +111,30 @@ struct ChunkFileService {
         return try readChunkFile(at: url, sourceFilePath: sourcePath, documentType: docType)
     }
 
+    // MARK: - Delete
+
+    /// Removes the `_chunks/` directory for a given root folder URL.
+    /// Returns `true` if the directory was removed or didn't exist, `false` on error.
+    @discardableResult
+    func deleteChunksDirectory(for rootFolderURL: URL) -> Bool {
+        let chunksDir = chunksRootURL(for: rootFolderURL)
+        guard fileManager.fileExists(atPath: chunksDir.path) else { return true }
+        do {
+            try fileManager.removeItem(at: chunksDir)
+            return true
+        } catch {
+            print("Failed to delete chunks directory: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     // MARK: - Discovery
 
     /// Recursively discovers all .md chunk files under chunksRootURL.
     func discoverChunkFiles(in chunksRootURL: URL) throws -> [ChunkFileInfo] {
         let root = chunksRootURL.standardized
+        // Hoist path computation out of the loop — avoids re-computing for every file.
+        let rootPath = root.path
         var results: [ChunkFileInfo] = []
 
         guard let enumerator = fileManager.enumerator(
@@ -126,13 +145,13 @@ struct ChunkFileService {
 
         for case let fileURL as URL in enumerator {
             guard fileURL.pathExtension.lowercased() == "md" else { continue }
-            var isDir: ObjCBool = false
-            guard fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDir), !isDir.boolValue else { continue }
 
-            let attrs = try fileManager.attributesOfItem(atPath: fileURL.path)
-            let lastModified = attrs[.modificationDate] as? Date ?? Date()
+            // Use cached resource values from the enumerator instead of a separate syscall.
+            let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+            guard resourceValues.isRegularFile == true else { continue }
+            let lastModified = resourceValues.contentModificationDate ?? Date()
 
-            let sourcePath = inferSourcePath(from: fileURL, chunksRoot: root)
+            let sourcePath = inferSourcePath(from: fileURL, chunksRootPath: rootPath)
             let docType = (sourcePath as NSString).pathExtension.lowercased()
             let documentType = docType.isEmpty ? "md" : docType
             let chunks = (try? readChunkFile(at: fileURL, sourceFilePath: sourcePath, documentType: documentType)) ?? []
@@ -151,12 +170,16 @@ struct ChunkFileService {
     /// Infer source document path from chunk file path.
     /// report.pdf.md in MyDocs/_chunks/subdir/ → original source: MyDocs/subdir/report.pdf
     private func inferSourcePath(from chunkFileURL: URL, chunksRoot: URL) -> String {
+        inferSourcePath(from: chunkFileURL, chunksRootPath: chunksRoot.path)
+    }
+
+    /// Overload accepting pre-computed root path string to avoid redundant `.path` calls in loops.
+    private func inferSourcePath(from chunkFileURL: URL, chunksRootPath: String) -> String {
         let chunkPath = chunkFileURL.standardized.path
-        let rootPath = chunksRoot.path
-        guard chunkPath.hasPrefix(rootPath) else { return chunkPath }
-        let relative = String(chunkPath.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard chunkPath.hasPrefix(chunksRootPath) else { return chunkPath }
+        let relative = String(chunkPath.dropFirst(chunksRootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let relativeWithoutMd = (relative as NSString).deletingPathExtension
-        let sourceRootPath = (rootPath as NSString).deletingLastPathComponent
+        let sourceRootPath = (chunksRootPath as NSString).deletingLastPathComponent
         return (sourceRootPath as NSString).appendingPathComponent(relativeWithoutMd)
     }
 }

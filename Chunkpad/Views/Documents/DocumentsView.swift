@@ -6,6 +6,8 @@ struct DocumentsView: View {
     @State private var viewModel = IndexingViewModel()
     @State private var indexedDocuments: [IndexedDocument] = []
     @State private var selectedNodeID: String?
+    @State private var showRemoveFolderConfirmation = false
+    @State private var showClearAllConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +32,66 @@ struct DocumentsView: View {
                 }
                 .disabled(viewModel.isIndexing)
             }
+            if viewModel.indexedFolder != nil {
+                ToolbarItem {
+                    Menu {
+                        Button {
+                            guard let folder = viewModel.indexedFolder else { return }
+                            Task { await viewModel.reprocessFolder(folder) }
+                        } label: {
+                            Label("Re-process Folder", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(viewModel.isIndexing)
+
+                        Button {
+                            Task { await viewModel.reembedAllChunks() }
+                        } label: {
+                            Label("Re-embed All Chunks", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(viewModel.isIndexing)
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            showRemoveFolderConfirmation = true
+                        } label: {
+                            Label("Remove Folder…", systemImage: "folder.badge.minus")
+                        }
+
+                        Button(role: .destructive) {
+                            showClearAllConfirmation = true
+                        } label: {
+                            Label("Clear All Data…", systemImage: "trash")
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Remove Folder", isPresented: $showRemoveFolderConfirmation) {
+            Button("Remove from Library", role: .destructive) {
+                guard let folder = viewModel.indexedFolder else { return }
+                Task { await viewModel.removeFolder(folder, deleteChunkFiles: false) }
+            }
+            Button("Remove Everything", role: .destructive) {
+                guard let folder = viewModel.indexedFolder else { return }
+                Task { await viewModel.removeFolder(folder, deleteChunkFiles: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Remove this folder from Chunkpad? \"Remove Everything\" also deletes the _chunks directory on disk.")
+        }
+        .confirmationDialog("Clear All Data", isPresented: $showClearAllConfirmation) {
+            Button("Clear Database Only", role: .destructive) {
+                Task { await viewModel.clearAllData(deleteChunkFiles: false) }
+            }
+            Button("Clear Everything", role: .destructive) {
+                Task { await viewModel.clearAllData(deleteChunkFiles: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Delete all indexed data? \"Clear Everything\" also removes chunk files from disk.")
         }
         .onAppear {
             viewModel.appState = appState
@@ -76,6 +138,12 @@ struct DocumentsView: View {
 
     private var documentList: some View {
         VStack(spacing: 0) {
+            if let folder = viewModel.indexedFolder, !folder.isAccessible {
+                inaccessibleFolderBanner(folder)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+            }
+
             if viewModel.isDownloadingModel {
                 IndexingProgressView(
                     documentName: viewModel.currentDocument,
@@ -271,6 +339,33 @@ struct DocumentsView: View {
         .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
     }
 
+    private func inaccessibleFolderBanner(_ folder: IndexedFolder) -> some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Folder Not Accessible")
+                    .font(.caption.weight(.semibold))
+                Text("\(folder.rootURL.lastPathComponent) — access was lost. Re-select to restore or remove it.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Re-select") {
+                Task { await reselectFolder(folder) }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            Button("Remove") {
+                showRemoveFolderConfirmation = true
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(GlassTokens.Padding.element)
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+    }
+
     private func errorBanner(_ message: String) -> some View {
         HStack {
             Image(systemName: "exclamationmark.triangle")
@@ -295,5 +390,10 @@ struct DocumentsView: View {
         let chunks = viewModel.approvedChunksForEmbed()
         await viewModel.embedApprovedChunks(from: chunks)
         viewModel.acknowledgeChunkFileModifications()
+    }
+
+    /// Re-selects a folder via NSOpenPanel to restore access (creates new bookmark).
+    private func reselectFolder(_ folder: IndexedFolder) async {
+        await viewModel.reprocessFolder(folder)
     }
 }
