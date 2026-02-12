@@ -46,5 +46,17 @@ let package = Package(
                 .linkedLibrary("sqlite3"),
             ]
         ),
+
+        // Tests for database services (ConversationDatabaseService uses plain SQLite only)
+        .testTarget(
+            name: "ChunkpadTests",
+            dependencies: [
+                "Chunkpad",
+            ],
+            path: "Tests",
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ]
+        ),
     ]
 )

@@ -86,7 +86,9 @@ actor ConversationDatabaseService {
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
-        guard sqlite3_step(statement) == SQLITE_DONE else {
+        let rc = sqlite3_step(statement)
+        // SQLITE_DONE for statements, SQLITE_ROW for PRAGMAs that return results
+        guard rc == SQLITE_DONE || rc == SQLITE_ROW else {
             throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
     }
@@ -133,6 +135,7 @@ actor ConversationDatabaseService {
 
     private func migrate() throws {
         let current = try querySchemaVersion()
+        guard current < Self.currentSchemaVersion else { return }
         for v in (current + 1)...Self.currentSchemaVersion {
             try runMigration(version: v)
         }
@@ -150,7 +153,7 @@ actor ConversationDatabaseService {
                 break
             }
             guard let db else { throw ConversationDatabaseError.connectionFailed("No connection") }
-            let sql = "INSERT INTO schema_version (version) VALUES (?)"
+            let sql = "INSERT OR REPLACE INTO schema_version (version) VALUES (?)"
             var statement: OpaquePointer?
             defer { sqlite3_finalize(statement) }
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -276,16 +279,23 @@ actor ConversationDatabaseService {
 
     func deleteConversation(id: String) throws {
         guard let db else { throw ConversationDatabaseError.connectionFailed("No connection") }
-        for sql in ["DELETE FROM messages WHERE conversation_id = ?", "DELETE FROM conversations WHERE id = ?"] {
-            var statement: OpaquePointer?
-            defer { sqlite3_finalize(statement) }
-            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-                throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        try execute("BEGIN TRANSACTION")
+        do {
+            for sql in ["DELETE FROM messages WHERE conversation_id = ?", "DELETE FROM conversations WHERE id = ?"] {
+                var statement: OpaquePointer?
+                defer { sqlite3_finalize(statement) }
+                guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+                    throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+                }
+                sqlite3_bind_text(statement, 1, id, -1, Self.sqliteTransient)
+                guard sqlite3_step(statement) == SQLITE_DONE else {
+                    throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+                }
             }
-            sqlite3_bind_text(statement, 1, id, -1, Self.sqliteTransient)
-            guard sqlite3_step(statement) == SQLITE_DONE else {
-                throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
-            }
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
         }
     }
 }

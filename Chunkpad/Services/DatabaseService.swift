@@ -27,7 +27,7 @@ enum DatabaseError: LocalizedError, Sendable {
 actor DatabaseService {
 
     /// Current schema version. Bump when adding migrations.
-    static let currentSchemaVersion = 6
+    static let currentSchemaVersion = 7
 
     // nonisolated(unsafe) because deinit needs access and OpaquePointer is not Sendable.
     // Thread safety is guaranteed by the actor isolation — deinit only runs after
@@ -207,6 +207,7 @@ actor DatabaseService {
 
     private func migrate() throws {
         let current = try querySchemaVersion()
+        guard current < Self.currentSchemaVersion else { return }
         for v in (current + 1)...Self.currentSchemaVersion {
             try runMigration(version: v)
         }
@@ -245,6 +246,13 @@ actor DatabaseService {
                 """)
             case 6:
                 try migrateEmbeddedChunkIdsFromUserDefaults()
+            case 7:
+                // Remove unused content_hash column from embedded_chunk_refs.
+                // SQLite doesn't support DROP COLUMN before 3.35; recreate instead.
+                try execute("CREATE TABLE IF NOT EXISTS embedded_chunk_refs_new (chunk_ref_id TEXT PRIMARY KEY, chunk_id TEXT, embedded_at TEXT NOT NULL)")
+                try execute("INSERT INTO embedded_chunk_refs_new (chunk_ref_id, chunk_id, embedded_at) SELECT chunk_ref_id, chunk_id, embedded_at FROM embedded_chunk_refs")
+                try execute("DROP TABLE embedded_chunk_refs")
+                try execute("ALTER TABLE embedded_chunk_refs_new RENAME TO embedded_chunk_refs")
             default:
                 break
             }
@@ -383,12 +391,11 @@ actor DatabaseService {
 
     func insertEmbeddedChunkRef(chunkRefId: String, chunkId: String?, embeddedAt: Date) throws {
         try execute("""
-            INSERT OR REPLACE INTO embedded_chunk_refs (chunk_ref_id, chunk_id, content_hash, embedded_at)
-            VALUES (?, ?, ?, ?)
+            INSERT OR REPLACE INTO embedded_chunk_refs (chunk_ref_id, chunk_id, embedded_at)
+            VALUES (?, ?, ?)
         """, bindings: [
             .text(chunkRefId),
             chunkId.map { .text($0) } ?? .null,
-            .null,
             .text(ISO8601DateFormatter().string(from: embeddedAt)),
         ])
     }
