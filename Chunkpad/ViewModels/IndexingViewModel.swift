@@ -367,12 +367,36 @@ final class IndexingViewModel {
         hasModifiedChunkFiles = false
     }
 
-    /// Builds ReviewableChunks for a file; isIncluded from overrides or default true.
+    /// Builds ReviewableChunks for a file; computes embeddingStatus from embeddedChunkIDs and inclusion state.
     func reviewableChunks(for fileInfo: ChunkFileInfo) -> [ReviewableChunk] {
         fileInfo.chunks.enumerated().map { index, pc in
             let id = ReviewableChunk.chunkID(filePath: fileInfo.fileURL.path, index: index)
             let isIncluded = chunkInclusionOverrides[id] ?? true
-            return ReviewableChunk(id: id, processedChunk: pc, isIncluded: isIncluded)
+            let status: ChunkEmbeddingStatus
+            if !isIncluded {
+                status = .excluded
+            } else if embeddedChunkIDs.contains(id) {
+                status = .embedded
+            } else {
+                status = .pending
+            }
+            return ReviewableChunk(id: id, processedChunk: pc, isIncluded: isIncluded, embeddingStatus: status)
+        }
+    }
+
+    /// Computes aggregate embedding status for a file's chunks.
+    func fileAggregateStatus(for fileInfo: ChunkFileInfo) -> FileEmbeddingStatus {
+        let chunks = reviewableChunks(for: fileInfo)
+        let included = chunks.filter { $0.isIncluded }
+        guard !included.isEmpty else { return .noneEmbedded }
+
+        let embeddedCount = included.filter { $0.embeddingStatus == .embedded }.count
+        if embeddedCount == included.count {
+            return .allEmbedded
+        } else if embeddedCount > 0 {
+            return .partiallyEmbedded
+        } else {
+            return .noneEmbedded
         }
     }
 

@@ -162,8 +162,17 @@ struct DocumentsView: View {
                 case .folder(let n):
                     Label(n.name, systemImage: "folder")
                 case .file(let n):
-                    Label(n.fileInfo.fileName, systemImage: "doc.text")
-                        .tag(node.id)
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                        Text(n.fileInfo.fileName)
+                        Spacer()
+                        let status = viewModel.fileAggregateStatus(for: n.fileInfo)
+                        Image(systemName: status.systemImage)
+                            .font(.caption2)
+                            .foregroundStyle(status.dotColor)
+                    }
+                    .tag(node.id)
                 }
             }
         }
@@ -232,8 +241,8 @@ struct DocumentsView: View {
                 Button {
                     viewModel.toggleChunkInclusion(id: reviewable.id)
                 } label: {
-                    Image(systemName: reviewable.isIncluded ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(.tint)
+                    Image(systemName: reviewable.embeddingStatus.systemImage)
+                        .foregroundStyle(reviewable.embeddingStatus.color)
                 }
                 .buttonStyle(.plain)
 
@@ -241,6 +250,11 @@ struct DocumentsView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tint)
                 Spacer()
+
+                if reviewable.isIncluded {
+                    ChunkStatusBadge(status: reviewable.embeddingStatus, showLabel: true)
+                }
+
                 Text("\(reviewable.processedChunk.content.count) chars")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

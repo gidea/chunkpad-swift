@@ -1,17 +1,85 @@
 import Foundation
+import SwiftUI
+
+// MARK: - Chunk Embedding Status
+
+/// Derived embedding status for a single chunk.
+/// Computed from `isIncluded` + membership in `embeddedChunkIDs`.
+enum ChunkEmbeddingStatus: Sendable, Equatable {
+    /// Embedded in the vector DB and currently included.
+    case embedded
+    /// Included for embedding but not yet in the vector DB.
+    case pending
+    /// User toggled this chunk off (will not be embedded).
+    case excluded
+    // case stale — deferred to task 2.5
+
+    var systemImage: String {
+        switch self {
+        case .embedded: return "checkmark.circle.fill"
+        case .pending:  return "clock.circle.fill"
+        case .excluded: return "circle"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .embedded: return .green
+        case .pending:  return .orange
+        case .excluded: return .secondary
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .embedded: return "Embedded"
+        case .pending:  return "Pending"
+        case .excluded: return "Excluded"
+        }
+    }
+}
+
+/// Aggregate embedding status for a file (all its chunks).
+enum FileEmbeddingStatus: Sendable, Equatable {
+    /// All included chunks are embedded.
+    case allEmbedded
+    /// Some included chunks are embedded, some are pending.
+    case partiallyEmbedded
+    /// No chunks are embedded (either all pending or all excluded).
+    case noneEmbedded
+    // case hasStale — deferred to task 2.5
+
+    var dotColor: Color {
+        switch self {
+        case .allEmbedded:       return .green
+        case .partiallyEmbedded: return .orange
+        case .noneEmbedded:      return .secondary
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .allEmbedded:       return "circle.fill"
+        case .partiallyEmbedded: return "circle.bottomhalf.filled"
+        case .noneEmbedded:      return "circle"
+        }
+    }
+}
 
 // MARK: - Reviewable Chunk
 
-/// A chunk with stable id and include/exclude state for the vector DB.
+/// A chunk with stable id, include/exclude state, and embedding status for the vector DB.
 struct ReviewableChunk: Identifiable, Sendable {
     let id: String
     let processedChunk: ProcessedChunk
     var isIncluded: Bool
+    var embeddingStatus: ChunkEmbeddingStatus
 
-    init(id: String, processedChunk: ProcessedChunk, isIncluded: Bool = true) {
+    init(id: String, processedChunk: ProcessedChunk, isIncluded: Bool = true, embeddingStatus: ChunkEmbeddingStatus = .pending) {
         self.id = id
         self.processedChunk = processedChunk
         self.isIncluded = isIncluded
+        self.embeddingStatus = embeddingStatus
     }
 
     /// Stable identifier: "{filePath}::chunk_{index}"

@@ -19,13 +19,15 @@ This document tracks all planned work for Chunkpad, organized by epic. Each epic
 
 ---
 
-## Epic 1: Persistence & Data Architecture
+## Epic 1: Persistence & Data Architecture ✅
 
 **Goal:** Establish a clear, documented strategy for what data lives where, fix inconsistencies between storage layers, and ensure no data is silently lost between app sessions.
 
-### Current state
+**Status:** Completed. Implemented in commits `87c0cde` (initial) and `6af26b7` (review fixes). All 9 tasks done. Minor remaining items: `idx_chunks_source_path` index not yet added, hybridSearch unit tests not yet added, content_hash deferred to Epic 2.5.
 
-The app uses four storage layers with overlapping and sometimes inconsistent responsibilities:
+### Current state (post-implementation)
+
+The app now uses a clean persistence architecture with versioned migrations:
 
 | Layer | What's stored | Location |
 |---|---|---|
@@ -36,97 +38,97 @@ The app uses four storage layers with overlapping and sometimes inconsistent res
 
 ### Tasks
 
-#### 1.1 Remove orphaned `messages` table from main DB schema [P0]
+#### 1.1 Remove orphaned `messages` table from main DB schema [P0] ✅
 
 The main `DatabaseService` creates a `messages` table (used for an earlier design) that is never read or written. Conversations are handled by `ConversationDatabaseService` in a separate DB. The orphaned table wastes schema space and confuses future developers.
 
-- [ ] Remove `CREATE TABLE messages` from `DatabaseService.createTables()`
-- [ ] Add a migration step: `DROP TABLE IF EXISTS messages` for existing databases
-- [ ] Verify no code references `messages` in `DatabaseService`
+- [x] Remove `CREATE TABLE messages` from `DatabaseService.createTables()`
+- [x] Add a migration step: `DROP TABLE IF EXISTS messages` for existing databases
+- [x] Verify no code references `messages` in `DatabaseService`
 
-#### 1.2 Add database migration system [P1]
+#### 1.2 Add database migration system [P1] ✅
 
 There is no versioning or migration system. Schema changes require manual intervention or risk breaking existing databases.
 
-- [ ] Add a `schema_version` pragma or `migrations` table to both databases
-- [ ] Implement a `migrate()` method in `DatabaseService` that runs versioned migration blocks
-- [ ] Implement the same for `ConversationDatabaseService`
-- [ ] First migration: remove orphaned `messages` table (see 1.1)
-- [ ] Document migration process in ARCHITECTURE.md for future contributors
+- [x] Add a `schema_version` pragma or `migrations` table to both databases
+- [x] Implement a `migrate()` method in `DatabaseService` that runs versioned migration blocks
+- [x] Implement the same for `ConversationDatabaseService`
+- [x] First migration: remove orphaned `messages` table (see 1.1)
+- [x] Document migration process in ARCHITECTURE.md for future contributors
 
 **Edge cases:**
-- App update with schema change on a machine with an existing database
-- Migration fails mid-way (need transaction wrapping)
-- User downgrades the app (forward-compatible schema)
+- ✅ App update with schema change on a machine with an existing database — handled by versioned migrations
+- ✅ Migration fails mid-way (need transaction wrapping) — each migration runs in BEGIN/COMMIT/ROLLBACK
+- User downgrades the app (forward-compatible schema) — not yet addressed
 
-#### 1.3 Wrap chunk insertion in a transaction [P0]
+#### 1.3 Wrap chunk insertion in a transaction [P0] ✅
 
 `DatabaseService.insertChunk()` writes to `chunks`, `vec_chunks`, and triggers FTS5 insertion -- three separate operations. If one fails, the others may succeed, leaving the database in an inconsistent state.
 
-- [ ] Wrap `insertChunk()` in `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`
-- [ ] Wrap `insertDocument()` + all its chunk inserts in a single transaction
-- [ ] Add the same for `deleteDocumentByFilePath()` (deletes from multiple tables)
+- [x] Wrap `insertChunk()` in `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`
+- [x] Wrap `insertDocument()` + all its chunk inserts in a single transaction (`insertDocumentWithChunks` + `performTransaction`)
+- [x] Add the same for `deleteDocumentByFilePath()` (deletes from multiple tables) — `deleteDocument` wrapped in `performTransaction`
 
 **Edge cases:**
-- App crash during embedding (partial chunks inserted)
-- Disk full during write (SQLite should handle, but verify)
-- Concurrent reads during transaction (WAL mode should handle)
+- ✅ App crash during embedding — transaction ensures atomicity
+- ✅ Disk full during write — SQLite + transaction rollback handles this
+- ✅ Concurrent reads during transaction — WAL mode enabled
 
-#### 1.4 Add missing database indexes [P1]
+#### 1.4 Add missing database indexes [P1] ✅
 
 Performance-critical queries lack indexes:
 
-- [ ] Add index on `chunks.document_id` (used in joins, cascade deletes, `chunksForDocument`)
-- [ ] Add index on `chunks.source_path` (used in `deleteDocumentByFilePath`)
-- [ ] Add index on `messages.conversation_id` + `messages.timestamp` in conversation DB (used for ordering)
-- [ ] Add these as migrations (see 1.2)
+- [x] Add index on `chunks.document_id` (used in joins, cascade deletes, `chunksForDocument`) — migration 2
+- [ ] Add index on `chunks.source_path` (used in `deleteDocumentByFilePath`) — **not yet added**
+- [x] Add index on `messages.conversation_id` + `messages.timestamp` in conversation DB (used for ordering) — chat DB migration 2 + schema
+- [x] Add these as migrations (see 1.2)
 
-#### 1.5 Move IndexedFolder tracking from UserDefaults to main DB [P1]
+#### 1.5 Move IndexedFolder tracking from UserDefaults to main DB [P1] ✅
 
 Currently, `IndexedFolder` (rootURL + chunksRootURL) is persisted in UserDefaults, and only the most recent folder is remembered. This prevents multi-folder support and loses history.
 
-- [ ] Create `indexed_folders` table in main DB: `id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count`
-- [ ] Migrate existing UserDefaults value to the new table on first run
-- [ ] Update `IndexingViewModel` to read/write from the DB instead of UserDefaults
-- [ ] Support multiple indexed folders (list of `IndexedFolder` instead of single optional)
-- [ ] Remove `IndexingKeys.indexedFolderRoot` and `indexedFolderChunksRoot` from UserDefaults
+- [x] Create `indexed_folders` table in main DB: `id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count` — migration 3
+- [x] Migrate existing UserDefaults value to the new table on first run — migration 4
+- [x] Update `IndexingViewModel` to read/write from the DB instead of UserDefaults
+- [x] Support multiple indexed folders (list of `IndexedFolder` instead of single optional)
+- [x] Remove `IndexingKeys.indexedFolderRoot` and `indexedFolderChunksRoot` from UserDefaults — removed in migration 4
 
 **Edge cases:**
-- Folder path no longer exists (external drive unplugged, folder deleted)
-- Folder was moved/renamed since last index
-- Two folders with the same name but different paths
+- Folder path no longer exists (external drive unplugged, folder deleted) — not yet handled
+- Folder was moved/renamed since last index — not yet handled
+- Two folders with the same name but different paths — handled by UNIQUE on root_path
 
-#### 1.6 Move embedded chunk IDs from UserDefaults to main DB [P1]
+#### 1.6 Move embedded chunk IDs from UserDefaults to main DB [P1] ✅
 
 `embeddedChunkIDs` is a `Set<String>` stored as a string array in UserDefaults. For large document sets this becomes unwieldy and is not queryable.
 
-- [ ] Track embedded status in the `chunks` table or a new `embedded_chunks` table: `chunk_id, embedded_at, chunk_hash`
-- [ ] Store a content hash alongside each embedded chunk so the app can detect when a chunk file was edited and the content actually changed (vs. just a timestamp change)
-- [ ] Migrate existing UserDefaults IDs to the database on first run
-- [ ] Remove `IndexingKeys.embeddedChunkIDs` from UserDefaults
-- [ ] Update `IndexingViewModel.embeddedChunkIDs` to read from DB
+- [x] Track embedded status in a new `embedded_chunk_refs` table: `chunk_ref_id, chunk_id, embedded_at` — migration 5
+- [-] Store a content hash alongside each embedded chunk — **deferred** (column removed in migration 7; will revisit in Epic 2.5 stale chunk detection)
+- [x] Migrate existing UserDefaults IDs to the database on first run — migration 6
+- [x] Remove `IndexingKeys.embeddedChunkIDs` from UserDefaults — removed in migration 6
+- [x] Update `IndexingViewModel.embeddedChunkIDs` to read from DB
 
-#### 1.7 Fix hybridSearch normalization [P0]
+#### 1.7 Fix hybridSearch normalization [P0] ✅
 
 `hybridSearch` divides FTS5 rank by `min(minRank, -0.001)` which can produce negative relevance scores when `minRank` is negative (which it always is for FTS5 rank values). This corrupts the 70/30 weighting.
 
-- [ ] Fix normalization: use `abs(minRank)` or a correct normalization formula
-- [ ] Add unit tests with known FTS5 rank values to verify score range is 0.0–1.0
-- [ ] Verify that `minScore` threshold filtering works correctly after the fix
+- [x] Fix normalization: uses `result.rank / minRank` (both negative, yields positive 0–1 range) with guard for sign and clamping
+- [ ] Add unit tests with known FTS5 rank values to verify score range is 0.0–1.0 — **not yet added** (requires DB + FTS5 test fixture)
+- [x] Verify that `minScore` threshold filtering works correctly after the fix
 
-#### 1.8 Fix SQL injection risk in ConversationDatabaseService [P1]
+#### 1.8 Fix SQL injection risk in ConversationDatabaseService [P1] ✅
 
 `fetchConversations()` uses string interpolation for `LIMIT \(limit)` instead of a parameterized query.
 
-- [ ] Change to parameterized query: `LIMIT ?` with bound parameter
-- [ ] Audit all other SQL queries in both database services for string interpolation
+- [x] Change to parameterized query: `LIMIT ?` with bound parameter
+- [x] Audit all other SQL queries in both database services for string interpolation
 
-#### 1.9 Document the persistence contract [P2]
+#### 1.9 Document the persistence contract [P2] ✅
 
 Write a clear reference for what belongs where, so future contributors don't accidentally put DB data in UserDefaults or vice versa.
 
-- [ ] Add a "Persistence Contract" section to ARCHITECTURE.md defining:
-  - Main DB: document metadata, chunk text, embeddings, FTS index, indexed folder registry
+- [x] Add a "Persistence Contract" section to ARCHITECTURE.md defining:
+  - Main DB: document metadata, chunk text, embeddings, FTS index, indexed folder registry, embedded chunk refs
   - Chat DB: conversations and messages only
   - UserDefaults: user preferences and settings only (generation mode, chunk size, API model selection)
   - Keychain: API keys only
@@ -211,21 +213,21 @@ Replace the current chunk-tree-with-detail layout with a more powerful browsing 
   - "Include All in File" / "Exclude All in File"
   - Chunk count summary: "42 chunks selected / 67 total"
 
-#### 2.4 Embedded vs. pending visual distinction [P0]
+#### 2.4 Embedded vs. pending visual distinction [P0] ✅ (2.4.1, 2.4.2 done)
 
 Users cannot tell which chunks have been embedded and which are pending. This is the most critical UX gap in the Documents view.
 
-- [ ] **2.4.1** In the chunk detail view, show a status badge per chunk:
+- [x] **2.4.1** In the chunk detail view, show a status badge per chunk:
   - Green checkmark: embedded (in the vector DB)
   - Orange clock: pending (included but not yet embedded)
   - Gray circle: excluded (user toggled off)
-  - Orange exclamation: stale (embedded but chunk file was modified since embedding)
-- [ ] **2.4.2** In the tree sidebar, show aggregate status per file:
+  - [ ] Orange exclamation: stale (deferred to task 2.5)
+- [x] **2.4.2** In the tree sidebar, show aggregate status per file:
   - All embedded: green dot
-  - Partially embedded: orange dot
-  - None embedded: gray dot
-  - Has stale chunks: orange dot with exclamation
-- [ ] **2.4.3** In the folder list (2.1.3), show aggregate status per folder
+  - Partially embedded: half-filled orange dot
+  - None embedded: gray circle
+  - [ ] Has stale chunks: orange dot with exclamation (deferred to task 2.5)
+- [ ] **2.4.3** In the folder list (2.1.3), show aggregate status per folder — deferred until folder list is built (task 2.1)
 
 #### 2.5 Stale chunk detection and re-embedding [P1]
 
@@ -610,20 +612,20 @@ The README.md project structure section is outdated. Missing files:
 
 Suggested sprint order based on dependencies and impact:
 
-### Sprint 1: Data Foundation (Epics 1 + 3)
-1. Fix hybridSearch normalization (1.7) — **P0**, quick fix
-2. Wrap chunk insertion in transaction (1.3) — **P0**, quick fix
-3. Remove orphaned messages table (1.1) — **P0**, quick fix
-4. Document and enforce download triggers (3.1) — **P0**, code comments + guards
-5. Fix SQL injection (1.8) — **P1**, quick fix
-6. Add database migration system (1.2) — **P1**, foundational for everything else
-7. Add missing indexes (1.4) — **P1**, runs as first migration
+### Sprint 1: Data Foundation (Epics 1 + 3) ✅ (Epic 1 complete; Epic 3 tasks remain)
+1. ~~Fix hybridSearch normalization (1.7)~~ — ✅ done
+2. ~~Wrap chunk insertion in transaction (1.3)~~ — ✅ done
+3. ~~Remove orphaned messages table (1.1)~~ — ✅ done
+4. Document and enforce download triggers (3.1) — **P0**, not yet started
+5. ~~Fix SQL injection (1.8)~~ — ✅ done
+6. ~~Add database migration system (1.2)~~ — ✅ done
+7. ~~Add missing indexes (1.4)~~ — ✅ done (except `idx_chunks_source_path`)
 
-### Sprint 2: Documents Library Core (Epic 2)
-1. Embedded vs. pending visual distinction (2.4) — **P0**, critical UX gap
-2. Multi-folder support (2.1) — **P1**, depends on 1.5
-3. Move IndexedFolder tracking to DB (1.5) — **P1**, blocks 2.1
-4. Move embedded chunk IDs to DB (1.6) — **P1**, blocks 2.4
+### Sprint 2: Documents Library Core (Epic 2) 🔄 In Progress
+1. ~~Embedded vs. pending visual distinction (2.4)~~ — ✅ done (2.4.1, 2.4.2; 2.4.3 deferred)
+2. Multi-folder support (2.1) — **P1**, depends on 1.5 (✅ done)
+3. ~~Move IndexedFolder tracking to DB (1.5)~~ — ✅ done (Sprint 1)
+4. ~~Move embedded chunk IDs to DB (1.6)~~ — ✅ done (Sprint 1)
 5. Security-scoped bookmark persistence (2.7) — **P1**, blocks reliable multi-folder
 6. Folder lifecycle management (2.2) — **P1**, delete/re-process/re-embed
 
