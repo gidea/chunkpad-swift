@@ -13,56 +13,79 @@ struct ProcessedChunk: Sendable {
 
 // MARK: - Document Processor
 
-/// Parses documents into text chunks using macOS native APIs.
+/// Parses documents into markdown-formatted text chunks.
 /// PDF: PDFKit (page-by-page)
-/// DOCX/RTF/ODT: textutil via NSAttributedString
+/// DOCX/DOC/RTF/ODT: textutil CLI (macOS)
 /// TXT/Markdown: direct read
 struct DocumentProcessor: Sendable {
 
-    /// Target chunk size in characters (~500 tokens ≈ 2000 chars).
-    /// Chunks overlap by ~10% for context continuity.
-    static let targetChunkSize = 2000
-    static let overlapSize = 200
+    /// Default chunk size / overlap (characters). Callers should override via parameters.
+    static let defaultChunkSizeChars = 4000   // ~1000 tokens × 4
+    static let defaultOverlapChars = 400      // ~100 tokens × 4
 
     // MARK: - Parse File
 
-    func processFile(at url: URL) async throws -> [ProcessedChunk] {
+    /// Process a single file using the appropriate extraction method.
+    /// - Parameters:
+    ///   - url: Path to the document.
+    ///   - chunkSizeChars: Target chunk size in characters. Defaults to 4000 (~1000 tokens).
+    ///   - overlapChars: Overlap between consecutive chunks in characters. Defaults to 400 (~100 tokens).
+    func processFile(
+        at url: URL,
+        chunkSizeChars: Int = defaultChunkSizeChars,
+        overlapChars: Int = defaultOverlapChars
+    ) async throws -> [ProcessedChunk] {
         let ext = url.pathExtension.lowercased()
         let docType = IndexedDocument.DocumentType(fromExtension: ext)
 
         switch docType {
         case .pdf:
-            return try processPDF(at: url)
-        case .docx, .rtf:
-            return try processRichText(at: url, type: docType)
+            return try processPDF(at: url, chunkSizeChars: chunkSizeChars, overlapChars: overlapChars)
+        case .docx, .doc, .rtf, .odt:
+            return try await processViaTextutil(at: url, type: docType, chunkSizeChars: chunkSizeChars, overlapChars: overlapChars)
         case .txt, .markdown:
-            return try processPlainText(at: url, type: docType)
-        case .pptx:
-            // PPTX requires more complex parsing; for now treat as rich text via textutil
-            return try processRichText(at: url, type: docType)
+            return try processPlainText(at: url, type: docType, chunkSizeChars: chunkSizeChars, overlapChars: overlapChars)
         case .unknown:
-            // Attempt plain text
-            return try processPlainText(at: url, type: .txt)
+            throw DocumentProcessorError.unsupportedFormat(ext)
         }
     }
 
-    /// Process all supported files in a directory (non-recursive or recursive).
-    func processDirectory(at url: URL, recursive: Bool = true) async throws -> [URL: [ProcessedChunk]] {
+    /// Process all supported files in a directory.
+    /// - Parameters:
+    ///   - url: Directory path.
+    ///   - recursive: Whether to recurse into subdirectories.
+    ///   - chunkSizeChars: Target chunk size in characters.
+    ///   - overlapChars: Overlap between consecutive chunks in characters.
+    func processDirectory(
+        at url: URL,
+        recursive: Bool = true,
+        chunkSizeChars: Int = defaultChunkSizeChars,
+        overlapChars: Int = defaultOverlapChars
+    ) async throws -> [URL: [ProcessedChunk]] {
         let fm = FileManager.default
-        let supportedExtensions = Set(["pdf", "docx", "doc", "rtf", "txt", "text", "md", "markdown", "pptx", "ppt"])
+        let supportedExtensions = IndexedDocument.DocumentType.supportedExtensions
 
         var results: [URL: [ProcessedChunk]] = [:]
 
-        // Collect file URLs synchronously to avoid async enumerator issues
+        // Collect file URLs synchronously to avoid async enumerator issues.
+        // Skip the _chunks/ directory to avoid re-processing chunk markdown files.
         let fileURLs: [URL] = {
             guard let enumerator = fm.enumerator(
                 at: url,
-                includingPropertiesForKeys: [.isRegularFileKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
                 options: recursive ? [.skipsHiddenFiles] : [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
             ) else { return [] }
 
             var urls: [URL] = []
             for case let fileURL as URL in enumerator {
+                // Skip the _chunks output directory (created by ChunkFileService).
+                if fileURL.lastPathComponent == "_chunks" {
+                    let isDir = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                    if isDir {
+                        enumerator.skipDescendants()
+                        continue
+                    }
+                }
                 if supportedExtensions.contains(fileURL.pathExtension.lowercased()) {
                     urls.append(fileURL)
                 }
@@ -72,7 +95,11 @@ struct DocumentProcessor: Sendable {
 
         for fileURL in fileURLs {
             do {
-                let chunks = try await processFile(at: fileURL)
+                let chunks = try await processFile(
+                    at: fileURL,
+                    chunkSizeChars: chunkSizeChars,
+                    overlapChars: overlapChars
+                )
                 if !chunks.isEmpty {
                     results[fileURL] = chunks
                 }
@@ -86,7 +113,7 @@ struct DocumentProcessor: Sendable {
 
     // MARK: - PDF Processing
 
-    private func processPDF(at url: URL) throws -> [ProcessedChunk] {
+    private func processPDF(at url: URL, chunkSizeChars: Int, overlapChars: Int) throws -> [ProcessedChunk] {
         guard let document = PDFDocument(url: url) else {
             throw DocumentProcessorError.cannotOpen(url.path)
         }
@@ -98,12 +125,17 @@ struct DocumentProcessor: Sendable {
             guard let page = document.page(at: pageIndex) else { continue }
             guard let text = page.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
 
+            // Wrap page text in markdown structure
+            let markdown = "# \(fileName) — Page \(pageIndex + 1)\n\n\(text)"
+
             let pageChunks = splitIntoChunks(
-                text: text,
+                text: markdown,
                 title: "\(fileName) — Page \(pageIndex + 1)",
                 documentType: "pdf",
                 slideNumber: nil,
-                sourcePath: url.path
+                sourcePath: url.path,
+                chunkSizeChars: chunkSizeChars,
+                overlapChars: overlapChars
             )
             chunks.append(contentsOf: pageChunks)
         }
@@ -111,59 +143,112 @@ struct DocumentProcessor: Sendable {
         return chunks
     }
 
-    // MARK: - Rich Text Processing (DOCX, RTF via NSAttributedString)
+    // MARK: - textutil Extraction (DOCX, DOC, RTF, ODT)
 
-    private func processRichText(at url: URL, type: IndexedDocument.DocumentType) throws -> [ProcessedChunk] {
-        let data = try Data(contentsOf: url)
-        let options: [NSAttributedString.DocumentReadingOptionKey: Any]
-
-        switch type {
-        case .docx:
-            options = [.documentType: NSAttributedString.DocumentType.docFormat]
-        case .rtf:
-            options = [.documentType: NSAttributedString.DocumentType.rtf]
-        default:
-            options = [:]
-        }
-
-        let attributed = try NSAttributedString(data: data, options: options, documentAttributes: nil)
-        let text = attributed.string
+    /// Extracts text from rich document formats using macOS `textutil` CLI.
+    /// Runs `textutil -convert txt -stdout <path>` and captures stdout as UTF-8.
+    private func processViaTextutil(
+        at url: URL,
+        type: IndexedDocument.DocumentType,
+        chunkSizeChars: Int,
+        overlapChars: Int
+    ) async throws -> [ProcessedChunk] {
+        let text = try await runTextutil(at: url)
         let fileName = url.deletingPathExtension().lastPathComponent
 
+        // Wrap in markdown structure
+        let markdown = "# \(fileName)\n\n\(text)"
+
         return splitIntoChunks(
-            text: text,
+            text: markdown,
             title: fileName,
             documentType: type.rawValue,
             slideNumber: nil,
-            sourcePath: url.path
+            sourcePath: url.path,
+            chunkSizeChars: chunkSizeChars,
+            overlapChars: overlapChars
         )
+    }
+
+    /// Run `textutil -convert txt -stdout <path>` and return the extracted text.
+    private func runTextutil(at url: URL) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/textutil")
+            process.arguments = ["-convert", "txt", "-stdout", url.path]
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = Pipe()  // Discard stderr
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: DocumentProcessorError.cannotOpen(url.path))
+                return
+            }
+
+            // Must read pipe BEFORE waitUntilExit to avoid deadlock: when the pipe buffer fills,
+            // the child blocks on write; we would block on wait; nobody drains the pipe.
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                continuation.resume(throwing: DocumentProcessorError.cannotOpen(url.path))
+                return
+            }
+            if let text = String(data: data, encoding: .utf8),
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                continuation.resume(returning: text)
+            } else {
+                continuation.resume(throwing: DocumentProcessorError.cannotOpen(url.path))
+            }
+        }
     }
 
     // MARK: - Plain Text Processing
 
-    private func processPlainText(at url: URL, type: IndexedDocument.DocumentType) throws -> [ProcessedChunk] {
+    private func processPlainText(
+        at url: URL,
+        type: IndexedDocument.DocumentType,
+        chunkSizeChars: Int,
+        overlapChars: Int
+    ) throws -> [ProcessedChunk] {
         let text = try String(contentsOf: url, encoding: .utf8)
         let fileName = url.deletingPathExtension().lastPathComponent
 
+        // Wrap in markdown structure
+        let markdown = "# \(fileName)\n\n\(text)"
+
         return splitIntoChunks(
-            text: text,
+            text: markdown,
             title: fileName,
             documentType: type.rawValue,
             slideNumber: nil,
-            sourcePath: url.path
+            sourcePath: url.path,
+            chunkSizeChars: chunkSizeChars,
+            overlapChars: overlapChars
         )
     }
 
     // MARK: - Chunking
 
-    /// Split text into overlapping chunks of approximately `targetChunkSize` characters.
+    /// Split text into overlapping chunks of approximately `chunkSizeChars` characters.
     /// Splits on paragraph boundaries when possible for cleaner chunks.
-    private func splitIntoChunks(text: String, title: String, documentType: String, slideNumber: Int?, sourcePath: String) -> [ProcessedChunk] {
+    private func splitIntoChunks(
+        text: String,
+        title: String,
+        documentType: String,
+        slideNumber: Int?,
+        sourcePath: String,
+        chunkSizeChars: Int,
+        overlapChars: Int
+    ) -> [ProcessedChunk] {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return [] }
 
         // If text is small enough, return as single chunk
-        if cleaned.count <= Self.targetChunkSize {
+        if cleaned.count <= chunkSizeChars {
             return [ProcessedChunk(
                 title: title,
                 content: cleaned,
@@ -183,7 +268,7 @@ struct DocumentProcessor: Sendable {
         var chunkIndex = 0
 
         for paragraph in paragraphs {
-            if currentChunk.count + paragraph.count + 2 > Self.targetChunkSize && !currentChunk.isEmpty {
+            if currentChunk.count + paragraph.count + 2 > chunkSizeChars && !currentChunk.isEmpty {
                 // Emit current chunk
                 chunks.append(ProcessedChunk(
                     title: "\(title) [\(chunkIndex + 1)]",
@@ -195,7 +280,7 @@ struct DocumentProcessor: Sendable {
                 chunkIndex += 1
 
                 // Start new chunk with overlap from end of previous
-                let overlap = String(currentChunk.suffix(Self.overlapSize))
+                let overlap = String(currentChunk.suffix(overlapChars))
                 currentChunk = overlap + "\n\n" + paragraph
             } else {
                 if !currentChunk.isEmpty {

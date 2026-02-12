@@ -1,17 +1,26 @@
 import SwiftUI
 
 /// A reusable card component with Liquid Glass styling.
-/// Per Liquid Glass skill: apply .glassEffect() AFTER layout/visual modifiers.
+/// Uses centralized design tokens for consistent appearance.
+///
+/// Usage:
+///   GlassCard { Text("Hello") }
+///   GlassCard(cornerRadius: GlassTokens.Radius.element) { ChunkContent() }
 struct GlassCard<Content: View>: View {
+    let cornerRadius: CGFloat
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(
+        cornerRadius: CGFloat = GlassTokens.Radius.card,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.cornerRadius = cornerRadius
         self.content = content()
     }
 
     var body: some View {
         content
-            .padding(16)
-            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            .padding(GlassTokens.Padding.card)
+            .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
     }
 }

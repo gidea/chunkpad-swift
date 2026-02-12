@@ -34,7 +34,7 @@ struct IndexingProgressView: View {
             ProgressView(value: progress)
                 .progressViewStyle(.linear)
         }
-        .padding(12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        .padding(GlassTokens.Padding.card)
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.card))
     }
 }

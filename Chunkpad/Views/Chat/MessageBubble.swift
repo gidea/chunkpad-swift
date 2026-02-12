@@ -28,12 +28,17 @@ struct MessageBubble: View {
                 Text(message.content)
                     .textSelection(.enabled)
                     .padding(12)
-                    .background(
-                        message.role == .user
-                            ? AnyShapeStyle(.tint.opacity(0.15))
-                            : AnyShapeStyle(.ultraThinMaterial),
-                        in: RoundedRectangle(cornerRadius: 16)
-                    )
+                    .background {
+                        if message.role == .user {
+                            RoundedRectangle(cornerRadius: GlassTokens.Radius.card)
+                                .fill(.tint.opacity(0.15))
+                                .glassEffect(.regular.tint(.accentColor), in: .rect(cornerRadius: GlassTokens.Radius.card))
+                        } else {
+                            RoundedRectangle(cornerRadius: GlassTokens.Radius.card)
+                                .fill(.clear)
+                                .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.card))
+                        }
+                    }
 
                 // Timestamp
                 Text(message.timestamp, style: .time)

@@ -31,6 +31,8 @@ let package = Package(
             dependencies: [
                 "CSQLiteVec",
                 .product(name: "MLXEmbedders", package: "mlx-swift-lm"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
             ],
             path: "Chunkpad",
             exclude: [

@@ -5,7 +5,7 @@ import MLXEmbedders
 // MARK: - Model Status
 
 /// Tracks the lifecycle of the embedding model: not yet downloaded → downloading → ready.
-/// The model is never bundled with the app — it's fetched from HuggingFace on demand.
+/// The model is never bundled with the app — it's downloaded on demand.
 enum EmbeddingModelStatus: Sendable, Equatable {
     case notDownloaded
     case downloading(progress: Double)
@@ -37,13 +37,13 @@ enum EmbeddingModelStatus: Sendable, Equatable {
 /// optimized for retrieval-augmented generation (RAG). Key properties:
 /// - 768-dimensional embeddings
 /// - CLS pooling (configured from model's 1_Pooling/config.json)
-/// - ~438 MB download (safetensors from HuggingFace)
+/// - ~438 MB download (model weights in safetensors format)
 /// - Cosine similarity for distance metric
 ///
 /// The model is NOT bundled with the app. It is downloaded from HuggingFace
-/// the first time the user triggers document indexing or a chat search.
-/// After download it's cached in ~/.cache/huggingface/hub/ and loads instantly
-/// on subsequent runs.
+/// ONLY when the user triggers document indexing (selects files to chunk and embed).
+/// It is NEVER downloaded from the chat path — the user must index documents first.
+/// After download it's cached locally and loads instantly on subsequent runs.
 ///
 /// BGE uses a query instruction prefix for retrieval queries:
 /// - Documents/passages: embedded as-is (no prefix)
@@ -52,7 +52,7 @@ actor EmbeddingService {
 
     // MARK: - Configuration
 
-    /// The HuggingFace model configuration — pre-registered in MLXEmbedders.
+    /// The model configuration — pre-registered in MLXEmbedders.
     static let modelConfiguration = ModelConfiguration.bge_base
 
     /// The dimensionality of output embeddings (768 for bge-base-en-v1.5).
@@ -65,6 +65,13 @@ actor EmbeddingService {
     static let modelDisplayName = "bge-base-en-v1.5"
     static let modelID = "BAAI/bge-base-en-v1.5"
     static let modelSize = "~438 MB"
+
+    /// Where the embedding model is cached on disk after download.
+    /// MLXEmbedders stores downloaded models here via its internal hub library.
+    static let cacheDirectory = "~/.cache/huggingface/hub/"
+
+    /// User-facing description of the cache location (no third-party branding).
+    static let cacheDisplayPath = "~/.cache/"
 
     // MARK: - State
 
@@ -104,7 +111,7 @@ actor EmbeddingService {
         }
 
         do {
-            // Phase 1: Download from HuggingFace (cached after first download)
+            // Phase 1: Download model weights (cached after first download)
             updateStatus(.downloading(progress: 0))
 
             let loadedContainer = try await loadModelContainer(

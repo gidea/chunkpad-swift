@@ -7,30 +7,43 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		046FC20E044DCFDC8E59A877 /* ConversationDatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B05C4203BD3D9C450E5565 /* ConversationDatabaseService.swift */; };
 		09A37CAE3717A5D0BA1807C2 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A9E1A806AE6FBE3997F98A /* Message.swift */; };
 		0E1F606BD786DD5AC3290517 /* DocumentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8166A0FF8CE1B59E34044DB /* DocumentProcessor.swift */; };
+		14351F2D601360CBF6AB1C65 /* IndexedFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3665361D9D99A35F25D5FF1D /* IndexedFolder.swift */; };
 		162BFB1F401973D6B5F472A5 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5EAF502D927E2781BDBCC67 /* MainView.swift */; };
+		1A6DEA9F8C9FB8526273DF95 /* GlassIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0613625E9A250908E4D25CF /* GlassIconButton.swift */; };
+		22DD238EA6561BF2544A8489 /* BundledLLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E08FA952EEC3ED43C850BDF /* BundledLLMService.swift */; };
 		2A8B52D2A559D4C3199C5307 /* LLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55054113AD5B984E336F6013 /* LLMService.swift */; };
 		3032329B54EE736299566093 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF923CC8AFFE12D8B4E71FC9 /* ChatViewModel.swift */; };
+		31782F89B8691F9AC8DEBA77 /* PinDocumentsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D77AD443F840338F6243DC2E /* PinDocumentsSheet.swift */; };
 		37ACDAA0A5BEB501BA271C0C /* LLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */; };
 		3B556E6426A27D5CF3C45F0B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000EDA03DCBF63F36397EB4 /* SettingsView.swift */; };
+		4CF77A722570B409C6F15601 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 10683FAAAEDBCBA2CC9D092A /* MLXLLM */; };
 		51B63328B59ECC391EA15AD0 /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3704B6D627F53C260813845A /* MessageBubble.swift */; };
 		54E86156189656F088A1750B /* DocumentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA865D22A09829EE2001197D /* DocumentsView.swift */; };
+		5DBA901743B32768ABAA6161 /* ChunkFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3905AAD1C08F121C21AD3821 /* ChunkFileService.swift */; };
 		604C4E4B1CD6BD265520FE80 /* AnthropicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */; };
 		7779DB8396EAC60C6B013EB5 /* IndexedDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126169AE8B1B14D3A048FB4B /* IndexedDocument.swift */; };
 		784E28EA2FAB3BA15A47067A /* Chunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2C72E7B8897539F47E4422 /* Chunk.swift */; };
 		85F49A6D686DC0E89AD200CE /* ChunkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2800900A9B7B6AF101D17691 /* ChunkPreview.swift */; };
+		88A6F038B4D1F6723AE95202 /* ScoredChunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A671952C4307ABBA9135C1C /* ScoredChunk.swift */; };
 		89760D7882CDD82C66E33D28 /* DatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */; };
 		AC85CA2502016275C0888E86 /* IndexingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F1FF271718D84F64B12B343 /* IndexingViewModel.swift */; };
 		AC93F835FD614BEAB51A92F7 /* sqlite-vec.c in Sources */ = {isa = PBXBuildFile; fileRef = 3D09376B06A823F9382D10A9 /* sqlite-vec.c */; };
 		B52A8D6CEC28E6885CC337BF /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */; };
 		BB1331DA8BABF022F8B80F3C /* EmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945988654CC4701EADA5B0C8 /* EmbeddingService.swift */; };
+		C38BFFA09DE039C7246F207E /* GlassPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4513FF8851EBE92D63669E5A /* GlassPill.swift */; };
+		C4B4748CFBC947717FED2338 /* ChunkFileTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC87D496ADD69D3890533131 /* ChunkFileTree.swift */; };
 		CD3B3A7D87F0D83CB320B323 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0596AF2F81926684DFB4105E /* ChatView.swift */; };
 		D3D5C717F7A05E84A73C3D07 /* ChunkpadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F51C2CB36117BE12326326DD /* ChunkpadApp.swift */; };
+		D737AECC6230D515F407CA72 /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9B13927A9545D9F1B87342 /* GlassTokens.swift */; };
 		D7E400457DC38BCADCD6A647 /* IndexingProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */; };
 		D8D2F77EC5147C9A78C21091 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */; };
 		DFCE4EDB949252D97D69AD37 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 33F82CA7FBC8ABEBF8B09348 /* MLXEmbedders */; };
+		E6CFE0BDC50A42ED2745A6B3 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4533BE42750E1AB39C4DF0 /* KeychainHelper.swift */; };
 		E9AAFC0BD4F0E58AB0071C9D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E7984A1A2036F7B8DA721723 /* Assets.xcassets */; };
+		EEAA93F135F97FA6C3070F24 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 1C94ACF1429AD798A9B88EB3 /* MLXLMCommon */; };
 		FA80B2A8AB663CAE0CF8EEFB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B7CEAEA72991BE0CDBCF557 /* AppState.swift */; };
 		FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E8DD3A89A1EA39273F1EF /* GlassCard.swift */; };
 /* End PBXBuildFile section */
@@ -43,22 +56,33 @@
 		260E8DD3A89A1EA39273F1EF /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
 		2800900A9B7B6AF101D17691 /* ChunkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkPreview.swift; sourceTree = "<group>"; };
 		2B7CEAEA72991BE0CDBCF557 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		2E08FA952EEC3ED43C850BDF /* BundledLLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledLLMService.swift; sourceTree = "<group>"; };
 		2F1FF271718D84F64B12B343 /* IndexingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexingViewModel.swift; sourceTree = "<group>"; };
 		32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexingProgressView.swift; sourceTree = "<group>"; };
+		3665361D9D99A35F25D5FF1D /* IndexedFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexedFolder.swift; sourceTree = "<group>"; };
 		3704B6D627F53C260813845A /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
+		3905AAD1C08F121C21AD3821 /* ChunkFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkFileService.swift; sourceTree = "<group>"; };
 		3D09376B06A823F9382D10A9 /* sqlite-vec.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "sqlite-vec.c"; sourceTree = "<group>"; };
+		4513FF8851EBE92D63669E5A /* GlassPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPill.swift; sourceTree = "<group>"; };
 		55054113AD5B984E336F6013 /* LLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMService.swift; sourceTree = "<group>"; };
 		599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
+		5D4533BE42750E1AB39C4DF0 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		6A671952C4307ABBA9135C1C /* ScoredChunk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoredChunk.swift; sourceTree = "<group>"; };
+		6D9B13927A9545D9F1B87342 /* GlassTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassTokens.swift; sourceTree = "<group>"; };
 		945988654CC4701EADA5B0C8 /* EmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingService.swift; sourceTree = "<group>"; };
 		977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMProvider.swift; sourceTree = "<group>"; };
 		A000EDA03DCBF63F36397EB4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIClient.swift; sourceTree = "<group>"; };
+		AC87D496ADD69D3890533131 /* ChunkFileTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkFileTree.swift; sourceTree = "<group>"; };
 		ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicClient.swift; sourceTree = "<group>"; };
 		AD2C72E7B8897539F47E4422 /* Chunk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chunk.swift; sourceTree = "<group>"; };
 		B5EAF502D927E2781BDBCC67 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		B74C9E8AE95D95D0EF721096 /* sqlite-vec.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "sqlite-vec.h"; sourceTree = "<group>"; };
 		C41B9E26B839EAEFE533DDAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D0613625E9A250908E4D25CF /* GlassIconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassIconButton.swift; sourceTree = "<group>"; };
+		D1B05C4203BD3D9C450E5565 /* ConversationDatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationDatabaseService.swift; sourceTree = "<group>"; };
+		D77AD443F840338F6243DC2E /* PinDocumentsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinDocumentsSheet.swift; sourceTree = "<group>"; };
 		D8166A0FF8CE1B59E34044DB /* DocumentProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentProcessor.swift; sourceTree = "<group>"; };
 		DF923CC8AFFE12D8B4E71FC9 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		E7984A1A2036F7B8DA721723 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -74,6 +98,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				DFCE4EDB949252D97D69AD37 /* MLXEmbedders in Frameworks */,
+				4CF77A722570B409C6F15601 /* MLXLLM in Frameworks */,
+				EEAA93F135F97FA6C3070F24 /* MLXLMCommon in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +110,9 @@
 			isa = PBXGroup;
 			children = (
 				260E8DD3A89A1EA39273F1EF /* GlassCard.swift */,
+				D0613625E9A250908E4D25CF /* GlassIconButton.swift */,
+				4513FF8851EBE92D63669E5A /* GlassPill.swift */,
+				6D9B13927A9545D9F1B87342 /* GlassTokens.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -113,6 +142,7 @@
 				0596AF2F81926684DFB4105E /* ChatView.swift */,
 				2800900A9B7B6AF101D17691 /* ChunkPreview.swift */,
 				3704B6D627F53C260813845A /* MessageBubble.swift */,
+				D77AD443F840338F6243DC2E /* PinDocumentsSheet.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -134,9 +164,13 @@
 			isa = PBXGroup;
 			children = (
 				ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */,
+				2E08FA952EEC3ED43C850BDF /* BundledLLMService.swift */,
+				3905AAD1C08F121C21AD3821 /* ChunkFileService.swift */,
+				D1B05C4203BD3D9C450E5565 /* ConversationDatabaseService.swift */,
 				599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */,
 				D8166A0FF8CE1B59E34044DB /* DocumentProcessor.swift */,
 				945988654CC4701EADA5B0C8 /* EmbeddingService.swift */,
+				5D4533BE42750E1AB39C4DF0 /* KeychainHelper.swift */,
 				55054113AD5B984E336F6013 /* LLMService.swift */,
 				381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */,
 				AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */,
@@ -212,9 +246,12 @@
 			isa = PBXGroup;
 			children = (
 				AD2C72E7B8897539F47E4422 /* Chunk.swift */,
+				AC87D496ADD69D3890533131 /* ChunkFileTree.swift */,
 				126169AE8B1B14D3A048FB4B /* IndexedDocument.swift */,
+				3665361D9D99A35F25D5FF1D /* IndexedFolder.swift */,
 				977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */,
 				E7A9E1A806AE6FBE3997F98A /* Message.swift */,
+				6A671952C4307ABBA9135C1C /* ScoredChunk.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -254,6 +291,8 @@
 			name = Chunkpad;
 			packageProductDependencies = (
 				33F82CA7FBC8ABEBF8B09348 /* MLXEmbedders */,
+				10683FAAAEDBCBA2CC9D092A /* MLXLLM */,
+				1C94ACF1429AD798A9B88EB3 /* MLXLMCommon */,
 			);
 			productName = Chunkpad;
 			productReference = 126F9250109F47C5BF26533B /* Chunkpad.app */;
@@ -308,19 +347,28 @@
 			files = (
 				604C4E4B1CD6BD265520FE80 /* AnthropicClient.swift in Sources */,
 				FA80B2A8AB663CAE0CF8EEFB /* AppState.swift in Sources */,
+				22DD238EA6561BF2544A8489 /* BundledLLMService.swift in Sources */,
 				CD3B3A7D87F0D83CB320B323 /* ChatView.swift in Sources */,
 				3032329B54EE736299566093 /* ChatViewModel.swift in Sources */,
 				784E28EA2FAB3BA15A47067A /* Chunk.swift in Sources */,
+				5DBA901743B32768ABAA6161 /* ChunkFileService.swift in Sources */,
+				C4B4748CFBC947717FED2338 /* ChunkFileTree.swift in Sources */,
 				85F49A6D686DC0E89AD200CE /* ChunkPreview.swift in Sources */,
 				D3D5C717F7A05E84A73C3D07 /* ChunkpadApp.swift in Sources */,
+				046FC20E044DCFDC8E59A877 /* ConversationDatabaseService.swift in Sources */,
 				89760D7882CDD82C66E33D28 /* DatabaseService.swift in Sources */,
 				0E1F606BD786DD5AC3290517 /* DocumentProcessor.swift in Sources */,
 				54E86156189656F088A1750B /* DocumentsView.swift in Sources */,
 				BB1331DA8BABF022F8B80F3C /* EmbeddingService.swift in Sources */,
 				FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */,
+				1A6DEA9F8C9FB8526273DF95 /* GlassIconButton.swift in Sources */,
+				C38BFFA09DE039C7246F207E /* GlassPill.swift in Sources */,
+				D737AECC6230D515F407CA72 /* GlassTokens.swift in Sources */,
 				7779DB8396EAC60C6B013EB5 /* IndexedDocument.swift in Sources */,
+				14351F2D601360CBF6AB1C65 /* IndexedFolder.swift in Sources */,
 				D7E400457DC38BCADCD6A647 /* IndexingProgressView.swift in Sources */,
 				AC85CA2502016275C0888E86 /* IndexingViewModel.swift in Sources */,
+				E6CFE0BDC50A42ED2745A6B3 /* KeychainHelper.swift in Sources */,
 				37ACDAA0A5BEB501BA271C0C /* LLMProvider.swift in Sources */,
 				2A8B52D2A559D4C3199C5307 /* LLMService.swift in Sources */,
 				162BFB1F401973D6B5F472A5 /* MainView.swift in Sources */,
@@ -328,6 +376,8 @@
 				51B63328B59ECC391EA15AD0 /* MessageBubble.swift in Sources */,
 				D8D2F77EC5147C9A78C21091 /* OllamaClient.swift in Sources */,
 				B52A8D6CEC28E6885CC337BF /* OpenAIClient.swift in Sources */,
+				31782F89B8691F9AC8DEBA77 /* PinDocumentsSheet.swift in Sources */,
+				88A6F038B4D1F6723AE95202 /* ScoredChunk.swift in Sources */,
 				3B556E6426A27D5CF3C45F0B /* SettingsView.swift in Sources */,
 				AC93F835FD614BEAB51A92F7 /* sqlite-vec.c in Sources */,
 			);
@@ -410,6 +460,7 @@
 				OTHER_LDFLAGS = "-lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = com.chunkpad.app;
 				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Vendor/CSQLiteVec/include";
 			};
 			name = Release;
 		};
@@ -494,6 +545,7 @@
 				OTHER_LDFLAGS = "-lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = com.chunkpad.app;
 				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Vendor/CSQLiteVec/include";
 			};
 			name = Debug;
 		};
@@ -532,6 +584,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		10683FAAAEDBCBA2CC9D092A /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 821DE3C6835FE6508EC1D1D1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
+		};
+		1C94ACF1429AD798A9B88EB3 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 821DE3C6835FE6508EC1D1D1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
 		33F82CA7FBC8ABEBF8B09348 /* MLXEmbedders */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 821DE3C6835FE6508EC1D1D1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;

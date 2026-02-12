@@ -28,6 +28,14 @@ struct CloudConfig: Sendable {
     }
 }
 
+/// A specific model offered by a cloud LLM provider.
+struct CloudModel: Identifiable, Hashable, Sendable {
+    /// The API model identifier sent in requests (e.g. "gpt-4o").
+    let id: String
+    /// User-facing display name (e.g. "GPT-4o").
+    let displayName: String
+}
+
 enum CloudProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case anthropic
     case openai
@@ -37,14 +45,31 @@ enum CloudProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .anthropic: return "Claude"
-        case .openai: return "GPT-4"
+        case .openai: return "ChatGPT"
         }
     }
 
     var defaultModel: String {
         switch self {
-        case .anthropic: return "claude-sonnet-4-20250514"
-        case .openai: return "gpt-4o"
+        case .anthropic: return "claude-sonnet-4-5"
+        case .openai: return "gpt-5.2"
+        }
+    }
+
+    /// Models available for selection in Settings.
+    var availableModels: [CloudModel] {
+        switch self {
+        case .anthropic:
+            return [
+                CloudModel(id: "claude-opus-4-6", displayName: "Claude Opus 4.6"),
+                CloudModel(id: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5"),
+                CloudModel(id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5"),
+            ]
+        case .openai:
+            return [
+                CloudModel(id: "gpt-5.2", displayName: "GPT-5.2"),
+                CloudModel(id: "o4-mini", displayName: "o4-mini"),
+            ]
         }
     }
 }
@@ -97,20 +122,22 @@ enum LocalProvider: String, Codable, CaseIterable, Identifiable, Sendable {
 
 /// Flat enum for SwiftUI picker binding.
 /// Maps to the richer `LLMProvider` type when constructing services.
+///
+/// Note: The bundled llama.cpp option is intentionally excluded here.
+/// It is reserved for internal text generation within the RAG pipeline
+/// and not exposed as a user-selectable chat model.
 enum GenerationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case anthropic
     case openai
     case ollama
-    case bundled
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .anthropic: return "Claude"
-        case .openai: return "GPT-4"
+        case .openai: return "ChatGPT"
         case .ollama: return "Ollama"
-        case .bundled: return "Bundled LLM"
         }
     }
 
@@ -119,7 +146,6 @@ enum GenerationMode: String, Codable, CaseIterable, Identifiable, Sendable {
         case .anthropic: return "cloud"
         case .openai: return "cloud.fill"
         case .ollama: return "server.rack"
-        case .bundled: return "cpu"
         }
     }
 
@@ -128,14 +154,13 @@ enum GenerationMode: String, Codable, CaseIterable, Identifiable, Sendable {
         case .anthropic: return "Anthropic · Bring your own key"
         case .openai: return "OpenAI · Bring your own key"
         case .ollama: return "Local · Free · Requires Ollama running"
-        case .bundled: return "Local · Free · Built-in llama.cpp"
         }
     }
 
     var isLocal: Bool {
         switch self {
         case .anthropic, .openai: return false
-        case .ollama, .bundled: return true
+        case .ollama: return true
         }
     }
 

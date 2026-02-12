@@ -26,5 +26,19 @@ struct ChunkpadApp: App {
             appState.isDatabaseConnected = false
             print("Database initialization failed: \(error.localizedDescription)")
         }
+        appState.loadFromUserProfile()
+        do {
+            try await appState.conversationDatabase.connect()
+        } catch {
+            print("Conversation DB initialization failed: \(error.localizedDescription)")
+        }
+
+        // Bridge BundledLLMService status to AppState for Settings and Chat
+        await BundledLLMService.shared.setStatusCallback { status in
+            Task { @MainActor in
+                appState.bundledLLMStatus = status
+            }
+        }
+        appState.bundledLLMStatus = await BundledLLMService.shared.getStatus()
     }
 }

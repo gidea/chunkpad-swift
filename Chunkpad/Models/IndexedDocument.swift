@@ -12,20 +12,22 @@ struct IndexedDocument: Identifiable, Codable, Sendable {
     enum DocumentType: String, Codable, Sendable, CaseIterable {
         case pdf
         case docx
+        case doc
         case rtf
+        case odt
         case txt
         case markdown
-        case pptx
         case unknown
 
         var displayName: String {
             switch self {
             case .pdf: return "PDF"
             case .docx: return "Word Document"
+            case .doc: return "Word Document (Legacy)"
             case .rtf: return "Rich Text"
+            case .odt: return "OpenDocument Text"
             case .txt: return "Plain Text"
             case .markdown: return "Markdown"
-            case .pptx: return "PowerPoint"
             case .unknown: return "Unknown"
             }
         }
@@ -33,23 +35,29 @@ struct IndexedDocument: Identifiable, Codable, Sendable {
         var icon: String {
             switch self {
             case .pdf: return "doc.richtext"
-            case .docx: return "doc.fill"
+            case .docx, .doc: return "doc.fill"
             case .rtf: return "doc.text"
+            case .odt: return "doc.text"
             case .txt: return "doc.plaintext"
             case .markdown: return "text.document"
-            case .pptx: return "rectangle.on.rectangle.angled"
             case .unknown: return "doc.questionmark"
             }
         }
 
+        /// The set of file extensions supported in this implementation.
+        static let supportedExtensions: Set<String> = [
+            "pdf", "docx", "doc", "rtf", "odt", "txt", "text", "md", "markdown"
+        ]
+
         init(fromExtension ext: String) {
             switch ext.lowercased() {
             case "pdf": self = .pdf
-            case "docx", "doc": self = .docx
+            case "docx": self = .docx
+            case "doc": self = .doc
             case "rtf": self = .rtf
+            case "odt": self = .odt
             case "txt", "text": self = .txt
             case "md", "markdown": self = .markdown
-            case "pptx", "ppt": self = .pptx
             default: self = .unknown
             }
         }

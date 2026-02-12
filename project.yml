@@ -34,7 +34,10 @@ targets:
         OTHER_LDFLAGS: "-lsqlite3"
         GCC_PREPROCESSOR_DEFINITIONS:
           - SQLITE_CORE=1
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Vendor/CSQLiteVec/include"
     dependencies:
       - package: mlx-swift-lm
         products:
           - MLXEmbedders
+          - MLXLLM
+          - MLXLMCommon

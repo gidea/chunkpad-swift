@@ -11,10 +11,11 @@ Chunkpad indexes your local documents (PDF, DOCX, TXT, Markdown, PPTX, RTF), gen
 - **100% local indexing** -- Documents are chunked and embedded on your Mac. Nothing leaves your machine during indexing.
 - **On-device embeddings** -- Uses [BAAI/bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5) via MLX Swift on Apple Silicon. No external API calls.
 - **Embedded database** -- SQLite + [sqlite-vec](https://github.com/asg017/sqlite-vec) for vector search + FTS5 for keyword search. No server to install.
-- **Hybrid search** -- Combines vector similarity (70%) and full-text matching (30%) for high-quality retrieval.
-- **Flexible LLM** -- Choose between cloud providers (Anthropic Claude, OpenAI GPT-4) or local models (Ollama, planned bundled llama.cpp).
-- **Liquid Glass UI** -- macOS 26 native design language with `.glassEffect()` throughout.
-- **Lazy model download** -- The embedding model (~438 MB) is not bundled. It's downloaded from HuggingFace only when you first index documents or search. Cached for instant loads afterwards.
+- **Hybrid search** -- Combines vector similarity (70%) and full-text matching (30%) with a relevance threshold. Irrelevant chunks are automatically filtered out.
+- **Transparent retrieval** -- Retrieved chunks are shown with relevance scores. Toggle individual chunks on/off and regenerate with your selection. Pin documents to always include them in context.
+- **Flexible LLM** -- Choose between cloud providers (Claude, ChatGPT), local models (Ollama), or the bundled Llama 3.2. Both cloud API keys can be configured upfront. If no API key is set, the app offers to download Llama 3.2 for free local generation.
+- **Liquid Glass UI** -- macOS 26 native design language with `.glassEffect()` throughout. Design values are centralized in `GlassTokens` for accessibility control, since Liquid Glass has known legibility and contrast issues in its initial release.
+- **Lazy model downloads** -- Neither the embedding model (~438 MB) nor the local LLM (~1.7 GB) is bundled with the app. The embedding model downloads only when you index documents. Llama 3.2 downloads only if you accept the offer. Cached locally for instant loads afterwards.
 
 ---
 
@@ -22,7 +23,7 @@ Chunkpad indexes your local documents (PDF, DOCX, TXT, Markdown, PPTX, RTF), gen
 
 - **macOS 26** (Tahoe) or later
 - **Apple Silicon** (M1/M2/M3/M4) -- required for MLX
-- **Xcode 26** or Swift 6.2+ toolchain
+- **Xcode 26** with **Metal Developer Tools 26** installed (Xcode will prompt you, or install via Xcode > Settings > Components)
 - **Internet connection** -- only for first-time embedding model download and cloud LLM usage
 
 ---
@@ -56,11 +57,13 @@ chunkpad-swift/
 │   │   └── AppState.swift             # Global observable state
 │   ├── Models/
 │   │   ├── Chunk.swift                # Document chunk model
+│   │   ├── ScoredChunk.swift          # Chunk + relevance score + include toggle
 │   │   ├── IndexedDocument.swift      # Indexed document metadata
 │   │   ├── LLMProvider.swift          # LLM provider enums & configs
 │   │   └── Message.swift              # Chat message model
 │   ├── Services/
 │   │   ├── EmbeddingService.swift     # MLX embedding (bge-base-en-v1.5)
+│   │   ├── BundledLLMService.swift    # Llama 3.2 local generation via MLXLLM
 │   │   ├── DatabaseService.swift      # SQLite + sqlite-vec + FTS5
 │   │   ├── DocumentProcessor.swift    # PDF/DOCX/TXT/MD/PPTX parsing & chunking
 │   │   ├── LLMService.swift           # LLM client protocol & factory
@@ -73,16 +76,20 @@ chunkpad-swift/
 │   ├── Views/
 │   │   ├── MainView.swift             # Root NavigationSplitView
 │   │   ├── Chat/
-│   │   │   ├── ChatView.swift         # Chat interface
+│   │   │   ├── ChatView.swift         # Chat interface + regenerate + pin docs
 │   │   │   ├── MessageBubble.swift    # Message display
-│   │   │   └── ChunkPreview.swift     # Retrieved chunk preview
+│   │   │   ├── ChunkPreview.swift     # Chunk preview with score & toggle
+│   │   │   └── PinDocumentsSheet.swift # Pin documents to always include
 │   │   ├── Documents/
 │   │   │   ├── DocumentsView.swift    # Document list & indexing trigger
 │   │   │   └── IndexingProgressView.swift
 │   │   ├── Settings/
 │   │   │   └── SettingsView.swift     # LLM config, DB status, model info
 │   │   └── Components/
-│   │       └── GlassCard.swift        # Reusable Liquid Glass card
+│   │       ├── GlassTokens.swift      # Centralized design tokens (radii, spacing, padding)
+│   │       ├── GlassCard.swift        # Reusable Liquid Glass card
+│   │       ├── GlassIconButton.swift  # Circular glass icon button
+│   │       └── GlassPill.swift        # Capsule-shaped glass tag/label
 │   └── Resources/
 │       ├── Info.plist
 │       ├── Chunkpad.entitlements
@@ -124,7 +131,7 @@ Documents → DocumentProcessor → Chunks
 
 | Dependency | Purpose | Source |
 |---|---|---|
-| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | MLXEmbedders for on-device BERT inference | SPM |
+| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | MLXEmbedders (embeddings) + MLXLLM (Llama generation) | SPM |
 | [sqlite-vec](https://github.com/asg017/sqlite-vec) | Vector search extension for SQLite | Vendored C source |
 | System SQLite3 | Database engine (ships with macOS) | macOS SDK |
 
@@ -137,18 +144,21 @@ No other third-party dependencies. LLM clients use `URLSession` directly.
 ### Embedding Model
 
 - **Model:** BAAI/bge-base-en-v1.5 (768 dimensions, BERT-based)
-- **Download:** Automatic on first use (~438 MB from HuggingFace)
-- **Cache:** `~/.cache/huggingface/hub/`
+- **Purpose:** Creates vector embeddings for document search. NEVER used for text generation.
+- **Download:** From HuggingFace, only when you index documents (~438 MB). Never from chat.
+- **Cache:** `~/.cache/` (cached locally after first download)
 - **Privacy:** 100% on-device inference via MLX on Apple Silicon
 
-### LLM Providers
+### LLM Providers (Text Generation)
 
 | Mode | Provider | Setup |
 |---|---|---|
 | Anthropic | Claude API | Enter API key in Settings |
-| OpenAI | GPT-4 API | Enter API key in Settings |
+| OpenAI | ChatGPT API | Enter API key in Settings |
 | Ollama | Local via HTTP | Install Ollama, run a model |
-| Bundled | llama.cpp (planned) | No setup needed |
+| Llama 3.2 | Bundled via MLX | Accept download offer (~1.7 GB) |
+
+Both cloud API keys can be configured simultaneously in Settings, so you can switch between Claude and ChatGPT without re-entering credentials. If no API key is set, the app offers to download Llama 3.2 for free local generation.
 
 ### Database
 

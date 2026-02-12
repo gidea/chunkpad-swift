@@ -26,6 +26,9 @@ enum DatabaseError: LocalizedError, Sendable {
 /// All database operations run on a dedicated serial actor to prevent concurrency issues.
 actor DatabaseService {
 
+    /// Current schema version. Bump when adding migrations.
+    static let currentSchemaVersion = 6
+
     // nonisolated(unsafe) because deinit needs access and OpaquePointer is not Sendable.
     // Thread safety is guaranteed by the actor isolation — deinit only runs after
     // all references are released, at which point no other code can access this.
@@ -81,8 +84,9 @@ actor DatabaseService {
         // Register sqlite-vec extension
         try registerSQLiteVec()
 
-        // Create schema
+        // Create base schema and run migrations
         try createSchema()
+        try migrate()
     }
 
     func disconnect() {
@@ -114,6 +118,8 @@ actor DatabaseService {
     // MARK: - Schema
 
     private func createSchema() throws {
+        try execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+
         // Regular table for document metadata
         try execute("""
             CREATE TABLE IF NOT EXISTS documents (
@@ -188,17 +194,93 @@ actor DatabaseService {
                 VALUES (new.rowid, new.title, new.content);
             END
         """)
+    }
 
-        // Conversations table
+    // MARK: - Migrations
+
+    private func querySchemaVersion() throws -> Int {
+        let rows: [Int] = try query("SELECT COALESCE(MAX(version), 0) FROM schema_version") { stmt in
+            Int(sqlite3_column_int64(stmt, 0))
+        }
+        return rows.first ?? 0
+    }
+
+    private func migrate() throws {
+        let current = try querySchemaVersion()
+        for v in (current + 1)...Self.currentSchemaVersion {
+            try runMigration(version: v)
+        }
+    }
+
+    private func runMigration(version: Int) throws {
+        try execute("BEGIN TRANSACTION")
+        do {
+            switch version {
+            case 1:
+                try execute("DROP TABLE IF EXISTS messages")
+            case 2:
+                try execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)")
+            case 3:
+                try execute("""
+                    CREATE TABLE IF NOT EXISTS indexed_folders (
+                        id TEXT PRIMARY KEY,
+                        root_path TEXT NOT NULL UNIQUE,
+                        chunks_root_path TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        last_processed_at TEXT,
+                        file_count INTEGER DEFAULT 0,
+                        chunk_count INTEGER DEFAULT 0
+                    )
+                """)
+            case 4:
+                try migrateIndexedFoldersFromUserDefaults()
+            case 5:
+                try execute("""
+                    CREATE TABLE IF NOT EXISTS embedded_chunk_refs (
+                        chunk_ref_id TEXT PRIMARY KEY,
+                        chunk_id TEXT,
+                        content_hash TEXT,
+                        embedded_at TEXT NOT NULL
+                    )
+                """)
+            case 6:
+                try migrateEmbeddedChunkIdsFromUserDefaults()
+            default:
+                break
+            }
+            try execute("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", bindings: [.int(Int64(version))])
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
+    }
+
+    private func migrateIndexedFoldersFromUserDefaults() throws {
+        let defaults = UserDefaults.standard
+        guard let rootPath = defaults.string(forKey: "indexing_folder_root"),
+              let chunksPath = defaults.string(forKey: "indexing_folder_chunks_root") else { return }
+        let id = UUID().uuidString
+        let now = ISO8601DateFormatter().string(from: Date())
         try execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                referenced_chunk_ids TEXT DEFAULT '[]'
-            )
-        """)
+            INSERT OR IGNORE INTO indexed_folders (id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count)
+            VALUES (?, ?, ?, ?, ?, 0, 0)
+        """, bindings: [.text(id), .text(rootPath), .text(chunksPath), .text(now), .null])
+        defaults.removeObject(forKey: "indexing_folder_root")
+        defaults.removeObject(forKey: "indexing_folder_chunks_root")
+    }
+
+    private func migrateEmbeddedChunkIdsFromUserDefaults() throws {
+        let defaults = UserDefaults.standard
+        guard let ids = defaults.stringArray(forKey: "indexing_embedded_chunk_ids"), !ids.isEmpty else { return }
+        let now = ISO8601DateFormatter().string(from: Date())
+        for id in ids {
+            try execute("""
+                INSERT OR IGNORE INTO embedded_chunk_refs (chunk_ref_id, chunk_id, content_hash, embedded_at)
+                VALUES (?, ?, ?, ?)
+            """, bindings: [.text(id), .null, .null, .text(now)])
+        }
+        defaults.removeObject(forKey: "indexing_embedded_chunk_ids")
     }
 
     // MARK: - Document CRUD
@@ -219,13 +301,119 @@ actor DatabaseService {
         ])
     }
 
+    /// Inserts a document and all its chunks in a single transaction. Use when embedding is done upfront.
+    func insertDocumentWithChunks(document: IndexedDocument, chunksWithEmbeddings: [(Chunk, [Float])]) throws {
+        try performTransaction {
+            try insertDocument(document)
+            for (chunk, embedding) in chunksWithEmbeddings {
+                try insertChunkInternal(chunk, documentID: document.id, embedding: embedding)
+            }
+        }
+    }
+
+    /// Internal chunk insert without transaction (for use inside performTransaction or insertDocumentWithChunks).
+    private func insertChunkInternal(_ chunk: Chunk, documentID: String, embedding: [Float]) throws {
+        try execute("""
+            INSERT OR REPLACE INTO chunks (id, document_id, title, summary, content, document_type, slide_number, source_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, bindings: [
+            .text(chunk.id),
+            .text(documentID),
+            .text(chunk.title),
+            chunk.summary.map { .text($0) } ?? .null,
+            .text(chunk.content),
+            chunk.documentType.map { .text($0) } ?? .null,
+            chunk.slideNumber.map { .int(Int64($0)) } ?? .null,
+            .text(chunk.sourcePath),
+            .text(ISO8601DateFormatter().string(from: chunk.createdAt)),
+        ])
+        try insertVectorEmbedding(chunkID: chunk.id, embedding: embedding,
+                                   documentType: chunk.documentType,
+                                   title: chunk.title, sourcePath: chunk.sourcePath)
+    }
+
     func deleteDocument(id: String) throws {
-        // Delete chunks from vec0
-        try execute("DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)",
-                     bindings: [.text(id)])
-        // Cascade deletes chunks (which triggers FTS cleanup)
-        try execute("DELETE FROM chunks WHERE document_id = ?", bindings: [.text(id)])
-        try execute("DELETE FROM documents WHERE id = ?", bindings: [.text(id)])
+        try performTransaction {
+            try execute("DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)",
+                         bindings: [.text(id)])
+            try execute("DELETE FROM chunks WHERE document_id = ?", bindings: [.text(id)])
+            try execute("DELETE FROM documents WHERE id = ?", bindings: [.text(id)])
+        }
+    }
+
+    // MARK: - Indexed Folders
+
+    func insertIndexedFolder(_ folder: IndexedFolder, fileCount: Int, chunkCount: Int) throws {
+        let id = folder.id ?? UUID().uuidString
+        let now = ISO8601DateFormatter().string(from: Date())
+        try execute("""
+            INSERT OR REPLACE INTO indexed_folders (id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, bindings: [
+            .text(id),
+            .text(folder.rootURL.path),
+            .text(folder.chunksRootURL.path),
+            .text(folder.createdAt.map { ISO8601DateFormatter().string(from: $0) } ?? now),
+            .text(now),
+            .int(Int64(fileCount)),
+            .int(Int64(chunkCount)),
+        ])
+    }
+
+    func fetchIndexedFolders() throws -> [IndexedFolder] {
+        let formatter = ISO8601DateFormatter()
+        return try query("SELECT id, root_path, chunks_root_path, created_at, last_processed_at, file_count, chunk_count FROM indexed_folders ORDER BY created_at DESC") { stmt in
+            IndexedFolder(
+                rootURL: URL(fileURLWithPath: columnText(stmt, 1)),
+                chunksRootURL: URL(fileURLWithPath: columnText(stmt, 2)),
+                id: columnText(stmt, 0),
+                createdAt: columnTextOptional(stmt, 3).flatMap { formatter.date(from: $0) },
+                lastProcessedAt: columnTextOptional(stmt, 4).flatMap { formatter.date(from: $0) },
+                fileCount: Int(sqlite3_column_int64(stmt, 5)),
+                chunkCount: Int(sqlite3_column_int64(stmt, 6))
+            )
+        }
+    }
+
+    func deleteIndexedFolder(id: String) throws {
+        try execute("DELETE FROM indexed_folders WHERE id = ?", bindings: [.text(id)])
+    }
+
+    // MARK: - Embedded Chunk Refs
+
+    func insertEmbeddedChunkRef(chunkRefId: String, chunkId: String?, embeddedAt: Date) throws {
+        try execute("""
+            INSERT OR REPLACE INTO embedded_chunk_refs (chunk_ref_id, chunk_id, content_hash, embedded_at)
+            VALUES (?, ?, ?, ?)
+        """, bindings: [
+            .text(chunkRefId),
+            chunkId.map { .text($0) } ?? .null,
+            .null,
+            .text(ISO8601DateFormatter().string(from: embeddedAt)),
+        ])
+    }
+
+    func fetchEmbeddedChunkRefIds() throws -> Set<String> {
+        let rows: [String] = try query("SELECT chunk_ref_id FROM embedded_chunk_refs") { stmt in
+            columnText(stmt, 0)
+        }
+        return Set(rows)
+    }
+
+    func deleteEmbeddedChunkRefs(matchingPrefix prefix: String) throws {
+        try execute("DELETE FROM embedded_chunk_refs WHERE chunk_ref_id LIKE ?", bindings: [.text(prefix + "%")])
+    }
+
+    // MARK: - Document CRUD
+
+    /// Deletes a document by file path if it exists. Used before re-embedding.
+    func deleteDocumentByFilePath(_ filePath: String) throws {
+        let ids: [String] = try query("SELECT id FROM documents WHERE file_path = ?", bindings: [.text(filePath)]) { stmt in
+            columnText(stmt, 0)
+        }
+        for id in ids {
+            try deleteDocument(id: id)
+        }
     }
 
     func allDocuments() throws -> [IndexedDocument] {
@@ -253,26 +441,9 @@ actor DatabaseService {
     // MARK: - Chunk CRUD
 
     func insertChunk(_ chunk: Chunk, documentID: String, embedding: [Float]) throws {
-        // Insert into chunks table
-        try execute("""
-            INSERT OR REPLACE INTO chunks (id, document_id, title, summary, content, document_type, slide_number, source_path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, bindings: [
-            .text(chunk.id),
-            .text(documentID),
-            .text(chunk.title),
-            chunk.summary.map { .text($0) } ?? .null,
-            .text(chunk.content),
-            chunk.documentType.map { .text($0) } ?? .null,
-            chunk.slideNumber.map { .int(Int64($0)) } ?? .null,
-            .text(chunk.sourcePath),
-            .text(ISO8601DateFormatter().string(from: chunk.createdAt)),
-        ])
-
-        // Insert into vec0 table with embedding
-        try insertVectorEmbedding(chunkID: chunk.id, embedding: embedding,
-                                   documentType: chunk.documentType,
-                                   title: chunk.title, sourcePath: chunk.sourcePath)
+        try performTransaction {
+            try insertChunkInternal(chunk, documentID: documentID, embedding: embedding)
+        }
     }
 
     // MARK: - Vector Operations
@@ -386,7 +557,18 @@ actor DatabaseService {
 
     /// Hybrid search: combine vector KNN + FTS5 results.
     /// Vector similarity weighted at 70%, keyword relevance at 30%.
-    func hybridSearch(queryEmbedding: [Float], queryText: String, k: Int = 10) throws -> [Chunk] {
+    /// Hybrid search combining vector KNN (70 %) and FTS5 keyword match (30 %).
+    ///
+    /// Returns `ScoredChunk` values so the UI can display relevance and let
+    /// users toggle individual chunks on/off before sending context to the LLM.
+    ///
+    /// - Parameters:
+    ///   - queryEmbedding: The 768-dim BGE query embedding.
+    ///   - queryText: The raw user query for FTS5.
+    ///   - k: Maximum number of results to return.
+    ///   - minScore: Minimum combined score (0–1). Chunks below this are discarded
+    ///               so irrelevant results never reach the LLM. Default 0.1.
+    func hybridSearch(queryEmbedding: [Float], queryText: String, k: Int = 10, minScore: Double = 0.1) throws -> [ScoredChunk] {
         // 1. Vector search (top 2k candidates)
         let vectorResults = try vectorSearch(queryEmbedding: queryEmbedding, k: k * 2)
 
@@ -406,29 +588,104 @@ actor DatabaseService {
         // FTS scores (rank is negative; more negative = more relevant)
         let minRank = ftsResults.map(\.rank).min() ?? -1.0
         for result in ftsResults {
-            let relevance = result.rank / min(minRank, -0.001)
+            let rawRelevance: Double
+            if result.rank <= 0 && minRank < 0 {
+                rawRelevance = result.rank / minRank
+            } else {
+                rawRelevance = 0
+            }
+            let relevance = min(1.0, max(0.0, rawRelevance))
             scores[result.chunkID, default: 0] += relevance * 0.3
         }
 
-        // 4. Sort by combined score and take top k
-        let topIDs = scores.sorted { $0.value > $1.value }
+        // 4. Filter by minimum score, sort by combined score, take top k
+        let topEntries = scores
+            .filter { $0.value >= minScore }
+            .sorted { $0.value > $1.value }
             .prefix(k)
-            .map(\.key)
+        let topIDs = topEntries.map(\.key)
+        let scoreMap = Dictionary(uniqueKeysWithValues: topEntries.map { ($0.key, $0.value) })
 
         // 5. Fetch full chunk data
         guard !topIDs.isEmpty else { return [] }
         let placeholders = topIDs.map { _ in "?" }.joined(separator: ", ")
         let sql = "SELECT id, title, summary, content, document_type, slide_number, source_path, created_at FROM chunks WHERE id IN (\(placeholders))"
 
+        guard let db else { throw DatabaseError.connectionFailed("No connection") }
+
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw DatabaseError.queryFailed(String(cString: sqlite3_errmsg(db!)))
+            throw DatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
 
         for (i, id) in topIDs.enumerated() {
             sqlite3_bind_text(stmt, Int32(i + 1), id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         }
+
+        var scoredChunks: [ScoredChunk] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let chunk = Chunk(
+                id: columnText(stmt!, 0),
+                title: columnText(stmt!, 1),
+                summary: columnTextOptional(stmt!, 2),
+                content: columnText(stmt!, 3),
+                documentType: columnTextOptional(stmt!, 4),
+                slideNumber: sqlite3_column_type(stmt, 5) != SQLITE_NULL ? Int(sqlite3_column_int64(stmt, 5)) : nil,
+                sourcePath: columnText(stmt!, 6),
+                createdAt: ISO8601DateFormatter().date(from: columnText(stmt!, 7)) ?? .now
+            )
+            let score = scoreMap[chunk.id] ?? 0
+            scoredChunks.append(ScoredChunk(chunk: chunk, relevanceScore: score))
+        }
+
+        // Re-sort by combined score (highest first)
+        scoredChunks.sort { $0.relevanceScore > $1.relevanceScore }
+
+        return scoredChunks
+    }
+
+    // MARK: - Document Listing (for Pin Documents)
+
+    /// Returns all indexed documents, ordered by file name.
+    func listDocuments() throws -> [IndexedDocument] {
+        guard let db else { throw DatabaseError.connectionFailed("No connection") }
+
+        let sql = "SELECT id, file_name, file_path, document_type, chunk_count, indexed_at, file_size FROM documents ORDER BY file_name"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw DatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        }
+
+        var docs: [IndexedDocument] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let docType = IndexedDocument.DocumentType(fromExtension: columnText(stmt!, 3))
+            docs.append(IndexedDocument(
+                id: columnText(stmt!, 0),
+                fileName: columnText(stmt!, 1),
+                filePath: columnText(stmt!, 2),
+                documentType: docType,
+                chunkCount: Int(sqlite3_column_int64(stmt, 4)),
+                indexedAt: ISO8601DateFormatter().date(from: columnText(stmt!, 5)) ?? .now,
+                fileSize: sqlite3_column_int64(stmt, 6)
+            ))
+        }
+        return docs
+    }
+
+    /// Fetches chunks belonging to a specific document (by document_id).
+    /// Used by the "pin documents" feature to manually include a document's chunks in context.
+    func chunksForDocument(documentID: String) throws -> [Chunk] {
+        guard let db else { throw DatabaseError.connectionFailed("No connection") }
+
+        let sql = "SELECT id, title, summary, content, document_type, slide_number, source_path, created_at FROM chunks WHERE document_id = ? ORDER BY created_at"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw DatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        }
+        sqlite3_bind_text(stmt, 1, documentID, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
         var chunks: [Chunk] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -443,12 +700,20 @@ actor DatabaseService {
                 createdAt: ISO8601DateFormatter().date(from: columnText(stmt!, 7)) ?? .now
             ))
         }
-
-        // Re-sort by combined score
-        let idOrder = Dictionary(uniqueKeysWithValues: topIDs.enumerated().map { ($1, $0) })
-        chunks.sort { (idOrder[$0.id] ?? 0) < (idOrder[$1.id] ?? 0) }
-
         return chunks
+    }
+
+    /// Runs the given block inside a transaction. Rolls back on error.
+    func performTransaction<T>(_ block: () throws -> T) throws -> T {
+        try execute("BEGIN TRANSACTION")
+        do {
+            let result = try block()
+            try execute("COMMIT")
+            return result
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
     }
 
     // MARK: - Helpers

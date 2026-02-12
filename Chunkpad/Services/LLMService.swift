@@ -36,8 +36,37 @@ enum LLMServiceFactory {
             case .ollama:
                 return OllamaClient(endpoint: config.endpoint, model: config.modelName)
             case .bundled:
-                // Bundled llama.cpp — placeholder for future implementation
-                return OllamaClient(endpoint: "http://localhost:11434", model: config.modelName)
+                return BundledLLMClient(service: BundledLLMService.shared)
+            }
+        }
+    }
+}
+
+// MARK: - Bundled LLM Client
+
+/// Wraps the BundledLLMService actor to conform to the LLMClient protocol.
+/// Uses Llama 3.2 running locally on Apple Silicon via MLX for text generation.
+struct BundledLLMClient: LLMClient, Sendable {
+    let service: BundledLLMService
+
+    func chat(messages: [ChatMessage]) async throws -> String {
+        try await service.generate(messages: messages)
+    }
+
+    func chatStream(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+        let service = self.service
+        let messages = messages
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let stream = await service.generateStream(messages: messages)
+                    for try await token in stream {
+                        continuation.yield(token)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
         }
     }
