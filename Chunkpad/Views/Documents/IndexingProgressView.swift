@@ -5,6 +5,10 @@ struct IndexingProgressView: View {
     let progress: Double
     let status: String
     var isModelDownload: Bool = false
+    /// Optional secondary detail line, e.g. "Chunk 14 / 47"
+    var detail: String? = nil
+    /// Optional cancel action. When non-nil a Cancel button is shown.
+    var onCancel: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -21,6 +25,10 @@ struct IndexingProgressView: View {
                         Text("First-time setup: \(EmbeddingService.modelDisplayName) (\(EmbeddingService.modelSize))")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
+                    } else if let detail {
+                        Text(detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -29,6 +37,12 @@ struct IndexingProgressView: View {
                 Text(status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if let onCancel {
+                    Button("Cancel", action: onCancel)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
             }
 
             ProgressView(value: progress)

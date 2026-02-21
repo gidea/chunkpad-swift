@@ -321,11 +321,18 @@ actor DatabaseService {
     }
 
     /// Inserts a document and all its chunks in a single transaction. Use when embedding is done upfront.
+    /// Also inserts `embedded_chunk_refs` rows so the chunk tree UI reflects the correct embedded status.
     func insertDocumentWithChunks(document: IndexedDocument, chunksWithEmbeddings: [(Chunk, [Float])]) throws {
+        let now = dateFormatter.string(from: Date())
         try performTransaction {
             try insertDocument(document)
             for (chunk, embedding) in chunksWithEmbeddings {
                 try insertChunkInternal(chunk, documentID: document.id, embedding: embedding)
+                // Track as embedded so the Documents UI shows correct status
+                try execute("""
+                    INSERT OR REPLACE INTO embedded_chunk_refs (chunk_ref_id, chunk_id, embedded_at)
+                    VALUES (?, ?, ?)
+                """, bindings: [.text(chunk.id), .text(chunk.id), .text(now)])
             }
         }
     }

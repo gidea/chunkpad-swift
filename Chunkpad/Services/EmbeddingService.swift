@@ -8,7 +8,8 @@ import MLXEmbedders
 /// The model is never bundled with the app — it's downloaded on demand.
 enum EmbeddingModelStatus: Sendable, Equatable {
     case notDownloaded
-    case downloading(progress: Double)
+    /// `progress` is 0–1; `bytesReceived` and `totalBytes` are optional (may be 0 if unknown).
+    case downloading(progress: Double, bytesReceived: Int64 = 0, totalBytes: Int64 = 0)
     case loading
     case ready
     case error(String)
@@ -21,11 +22,25 @@ enum EmbeddingModelStatus: Sendable, Equatable {
     var displayText: String {
         switch self {
         case .notDownloaded: return "Not Downloaded"
-        case .downloading(let p): return "Downloading \(Int(p * 100))%"
+        case .downloading(let p, _, _): return "Downloading \(Int(p * 100))%"
         case .loading: return "Loading into memory..."
         case .ready: return "Ready"
         case .error(let msg): return "Error: \(msg)"
         }
+    }
+
+    /// Formatted bytes string, e.g. "214 MB / 438 MB". Returns nil if sizes are unknown.
+    var downloadBytesLabel: String? {
+        guard case .downloading(_, let received, let total) = self, total > 0 else { return nil }
+        return "\(Self.formatBytes(received)) / \(Self.formatBytes(total))"
+    }
+
+    private static func formatBytes(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / 1_048_576
+        if mb >= 1024 {
+            return String(format: "%.1f GB", mb / 1024)
+        }
+        return String(format: "%.0f MB", mb)
     }
 }
 
@@ -119,7 +134,9 @@ actor EmbeddingService {
                 progressHandler: { [weak self] progress in
                     guard let self else { return }
                     let fraction = progress.fractionCompleted
-                    Task { await self.updateStatus(.downloading(progress: fraction)) }
+                    let received = progress.completedUnitCount
+                    let total = progress.totalUnitCount
+                    Task { await self.updateStatus(.downloading(progress: fraction, bytesReceived: received, totalBytes: total)) }
                 }
             )
 

@@ -29,11 +29,25 @@ final class IndexingViewModel {
     var isIndexing = false
     var isDownloadingModel = false
     var modelDownloadProgress: Double = 0
+    /// Human-readable bytes label during model download, e.g. "214 MB / 438 MB". Nil when unknown.
+    var modelDownloadBytesLabel: String?
     var currentDocument: String = ""
     var progress: Double = 0
     var totalFiles: Int = 0
     var processedFiles: Int = 0
     var error: String?
+
+    // Per-chunk embedding progress (populated during embedApprovedChunks)
+    var embeddedChunksCount: Int = 0
+    var totalChunksToEmbed: Int = 0
+
+    // Success banner shown after an embed run completes
+    var lastEmbedSummary: EmbedSummary?
+
+    struct EmbedSummary: Sendable {
+        let chunkCount: Int
+        let fileCount: Int
+    }
 
     // MARK: - Processing-Only Results
 
@@ -66,6 +80,17 @@ final class IndexingViewModel {
     private var cachedEmbeddedIDsCount = 0
     /// Snapshot of overrides count when cache was last valid.
     private var cachedOverridesCount = 0
+
+    // MARK: - Cancellation
+
+    /// The currently running indexing or embedding task. Nil when idle.
+    private var currentTask: Task<Void, Never>?
+
+    /// Cancel any in-progress indexing or embedding operation.
+    func cancelCurrentOperation() {
+        currentTask?.cancel()
+        currentTask = nil
+    }
 
     // MARK: - Dependencies
 
@@ -153,7 +178,9 @@ final class IndexingViewModel {
     func selectAndProcessFolder() async {
         guard !isIndexing else { return }
         guard let result = await pickFolder() else { return }
-        await processFolder(at: result.url, bookmarkData: result.bookmarkData)
+        currentTask = Task { await processFolder(at: result.url, bookmarkData: result.bookmarkData) }
+        await currentTask?.value
+        currentTask = nil
     }
 
     /// Extracts text, chunks, writes markdown files to {folder}_chunks/, discovers and builds tree.
@@ -192,6 +219,11 @@ final class IndexingViewModel {
             var totalChunks = 0
             var fileIndex = 0
             for (fileURL, chunks) in fileChunks.sorted(by: { $0.key.lastPathComponent < $1.key.lastPathComponent }) {
+                if Task.isCancelled {
+                    currentDocument = "Cancelled."
+                    isIndexing = false
+                    return
+                }
                 currentDocument = fileURL.lastPathComponent
                 _ = try chunkFileService.writeChunks(chunks, sourceFileURL: fileURL, rootFolderURL: rootURL)
                 totalChunks += chunks.count
@@ -235,7 +267,9 @@ final class IndexingViewModel {
         // Show folder picker
         guard let result = await pickFolder() else { return }
 
-        await indexFolder(at: result.url)
+        currentTask = Task { await indexFolder(at: result.url) }
+        await currentTask?.value
+        currentTask = nil
     }
 
     /// Index all documents in a given folder (full pipeline: embed + DB).
@@ -262,10 +296,12 @@ final class IndexingViewModel {
                     guard let self else { return }
                     self.appState?.embeddingModelStatus = status
 
-                    if case .downloading(let p) = status {
+                    if case .downloading(let p, _, _) = status {
                         self.modelDownloadProgress = p
+                        self.modelDownloadBytesLabel = status.downloadBytesLabel
                         self.currentDocument = "Downloading embedding model... \(Int(p * 100))%"
                     } else if case .loading = status {
+                        self.modelDownloadBytesLabel = nil
                         self.currentDocument = "Loading embedding model into memory..."
                     }
                 }
@@ -291,6 +327,12 @@ final class IndexingViewModel {
 
             // 4. Process each file: embed all chunks, then insert document + chunks atomically
             for (fileURL, chunks) in fileChunks {
+                if Task.isCancelled {
+                    currentDocument = "Cancelled."
+                    isIndexing = false
+                    isDownloadingModel = false
+                    return
+                }
                 currentDocument = fileURL.lastPathComponent
                 let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
 
@@ -323,9 +365,12 @@ final class IndexingViewModel {
 
             currentDocument = "Done! Indexed \(totalFiles) documents."
 
+            // Refresh embedded chunk IDs so the Documents UI reflects correct status
+            embeddedChunkIDs = (try? await database.fetchEmbeddedChunkRefIds()) ?? embeddedChunkIDs
+
             // Update global document count so ChatViewModel knows documents are available
             if let appState {
-                appState.indexedDocumentCount = (appState.indexedDocumentCount) + totalFiles
+                appState.indexedDocumentCount = (try? await database.documentCount()) ?? appState.indexedDocumentCount
             }
         } catch {
             self.error = error.localizedDescription
@@ -341,9 +386,20 @@ final class IndexingViewModel {
     func embedApprovedChunks(from reviewableChunks: [ReviewableChunk]) async {
         let toEmbed = reviewableChunks.filter { $0.isIncluded }
         guard !toEmbed.isEmpty, !isIndexing else { return }
+        currentTask = Task {
+            await _embedApprovedChunksBody(toEmbed: toEmbed)
+        }
+        await currentTask?.value
+        currentTask = nil
+    }
+
+    private func _embedApprovedChunksBody(toEmbed: [ReviewableChunk]) async {
         isIndexing = true
         error = nil
         isDownloadingModel = false
+        lastEmbedSummary = nil
+        embeddedChunksCount = 0
+        totalChunksToEmbed = toEmbed.count
         do {
             try await ensureDatabaseConnected()
             currentDocument = "Preparing embedding model..."
@@ -352,10 +408,12 @@ final class IndexingViewModel {
                 Task { @MainActor in
                     guard let self else { return }
                     self.appState?.embeddingModelStatus = status
-                    if case .downloading(let p) = status {
+                    if case .downloading(let p, _, _) = status {
                         self.modelDownloadProgress = p
+                        self.modelDownloadBytesLabel = status.downloadBytesLabel
                         self.currentDocument = "Downloading embedding model... \(Int(p * 100))%"
                     } else if case .loading = status {
+                        self.modelDownloadBytesLabel = nil
                         self.currentDocument = "Loading embedding model..."
                     }
                 }
@@ -378,9 +436,17 @@ final class IndexingViewModel {
                 let document = IndexedDocument(id: sourcePath, fileName: (sourcePath as NSString).lastPathComponent, filePath: sourcePath, documentType: docType, chunkCount: chunks.count, fileSize: 0)
                 var chunksWithEmbeddings: [(Chunk, [Float])] = []
                 for rc in chunks {
+                    if Task.isCancelled {
+                        currentDocument = "Cancelled."
+                        isIndexing = false
+                        isDownloadingModel = false
+                        return
+                    }
                     let embedding = try await embedder.embed(rc.processedChunk.content)
                     let chunkModel = Chunk(title: rc.processedChunk.title, content: rc.processedChunk.content, documentType: rc.processedChunk.documentType, slideNumber: rc.processedChunk.slideNumber, sourcePath: rc.processedChunk.sourcePath)
                     chunksWithEmbeddings.append((chunkModel, embedding))
+                    embeddedChunksCount += 1
+                    progress = Double(embeddedChunksCount) / Double(totalChunksToEmbed)
                 }
                 try await database.insertDocumentWithChunks(document: document, chunksWithEmbeddings: chunksWithEmbeddings)
                 for rc in chunks {
@@ -388,9 +454,9 @@ final class IndexingViewModel {
                 }
                 embeddedChunkIDs = try await database.fetchEmbeddedChunkRefIds()
                 processedFiles += 1
-                progress = Double(processedFiles) / Double(totalFiles)
             }
             currentDocument = "Done! Embedded \(toEmbed.count) chunks."
+            lastEmbedSummary = EmbedSummary(chunkCount: toEmbed.count, fileCount: bySource.count)
             if let appState { appState.indexedDocumentCount = (try? await database.documentCount()) ?? appState.indexedDocumentCount }
         } catch {
             self.error = error.localizedDescription
@@ -398,6 +464,13 @@ final class IndexingViewModel {
             isDownloadingModel = false
         }
         isIndexing = false
+    }
+
+    /// Retry after a model-download or embedding error by re-running the embed pipeline
+    /// with whatever approved chunks are currently in the tree.
+    func retryEmbedding() async {
+        error = nil
+        await reembedAllChunks()
     }
 
     func refreshChunkTree() async {
@@ -480,6 +553,26 @@ final class IndexingViewModel {
         chunkInclusionOverrides[id] = !current
         // Invalidate memoized reviewable chunks
         reviewableChunksCache.removeAll()
+    }
+
+    /// Number of included chunks across all files that are not yet embedded.
+    /// Used to drive the "pending embed" CTA banner in DocumentsView.
+    var pendingEmbedCount: Int {
+        guard let tree = chunkFileTree else { return 0 }
+        var count = 0
+        countPendingChunks(from: tree.rootFolder, into: &count)
+        return count
+    }
+
+    private func countPendingChunks(from node: ChunkFolderNode, into count: inout Int) {
+        for child in node.children {
+            switch child {
+            case .file(let fileNode):
+                count += reviewableChunks(for: fileNode.fileInfo).filter { $0.embeddingStatus == .pending }.count
+            case .folder(let folderNode):
+                countPendingChunks(from: folderNode, into: &count)
+            }
+        }
     }
 
     /// All reviewable chunks from the tree for Embed action; only returns those with isIncluded.

@@ -148,27 +148,45 @@ struct DocumentsView: View {
                 IndexingProgressView(
                     documentName: viewModel.currentDocument,
                     progress: viewModel.modelDownloadProgress,
-                    status: "Embedding model",
-                    isModelDownload: true
+                    status: viewModel.modelDownloadBytesLabel ?? "Embedding model",
+                    isModelDownload: true,
+                    onCancel: { viewModel.cancelCurrentOperation() }
                 )
                 .padding()
                 Divider()
             }
 
             if viewModel.isIndexing && !viewModel.isDownloadingModel {
+                let chunkDetail: String? = viewModel.totalChunksToEmbed > 0
+                    ? "Chunk \(viewModel.embeddedChunksCount) / \(viewModel.totalChunksToEmbed)"
+                    : nil
                 IndexingProgressView(
                     documentName: viewModel.currentDocument,
                     progress: viewModel.progress,
                     status: "\(viewModel.processedFiles)/\(viewModel.totalFiles) files",
-                    isModelDownload: false
+                    isModelDownload: false,
+                    detail: chunkDetail,
+                    onCancel: { viewModel.cancelCurrentOperation() }
                 )
                 .padding()
                 Divider()
             }
 
+            if let summary = viewModel.lastEmbedSummary, !viewModel.isIndexing {
+                embedSuccessBanner(summary)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+            }
+
             if let error = viewModel.error {
                 errorBanner(error)
                     .padding(.horizontal)
+            }
+
+            if !viewModel.isIndexing && viewModel.pendingEmbedCount > 0 {
+                pendingEmbedBanner
+                    .padding(.horizontal)
+                    .padding(.top, 8)
             }
 
             if viewModel.hasModifiedChunkFiles {
@@ -339,6 +357,58 @@ struct DocumentsView: View {
         .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
     }
 
+    private func embedSuccessBanner(_ summary: IndexingViewModel.EmbedSummary) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Embedding Complete")
+                    .font(.caption.weight(.semibold))
+                Text("\(summary.chunkCount) chunk\(summary.chunkCount == 1 ? "" : "s") from \(summary.fileCount) file\(summary.fileCount == 1 ? "" : "s") — ready for semantic search.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Chat Now") {
+                appState.selectedItem = .chat(conversationId: nil)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            Button {
+                viewModel.lastEmbedSummary = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(GlassTokens.Padding.element)
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+    }
+
+    private var pendingEmbedBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.up.doc.on.clipboard")
+                .foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Ready to Embed")
+                    .font(.caption.weight(.semibold))
+                Text("\(viewModel.pendingEmbedCount) chunk\(viewModel.pendingEmbedCount == 1 ? "" : "s") processed — embed them to enable semantic search in Chat.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Embed Now") {
+                Task { await embedApprovedChunks() }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(GlassTokens.Padding.element)
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+    }
+
     private func inaccessibleFolderBanner(_ folder: IndexedFolder) -> some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -367,12 +437,20 @@ struct DocumentsView: View {
     }
 
     private func errorBanner(_ message: String) -> some View {
-        HStack {
+        HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
             Text(message)
                 .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
+            if viewModel.chunkFileTree != nil {
+                Button("Retry") {
+                    Task { await viewModel.retryEmbedding() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
             Button("Dismiss") { viewModel.error = nil }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.medium))
