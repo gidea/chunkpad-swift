@@ -9,6 +9,7 @@ struct ChunkpadApp: App {
             MainView()
                 .environment(appState)
                 .task {
+                    appState.retryDatabaseInit = { await initializeDatabase() }
                     await initializeDatabase()
                 }
         }
@@ -16,8 +17,11 @@ struct ChunkpadApp: App {
         .defaultSize(width: 1000, height: 700)
     }
 
-    private func initializeDatabase() async {
+    @MainActor
+    func initializeDatabase() async {
         let db = DatabaseService()
+        appState.initError = nil
+        appState.conversationDBError = nil
         do {
             try await db.connect()
             appState.isDatabaseConnected = true
@@ -26,13 +30,13 @@ struct ChunkpadApp: App {
             // when the user navigates to the Documents tab, avoiding duplicate work.
         } catch {
             appState.isDatabaseConnected = false
-            print("Database initialization failed: \(error.localizedDescription)")
+            appState.initError = "Database unavailable: \(error.localizedDescription)"
         }
         appState.loadFromUserProfile()
         do {
             try await appState.conversationDatabase.connect()
         } catch {
-            print("Conversation DB initialization failed: \(error.localizedDescription)")
+            appState.conversationDBError = "Conversation database unavailable: \(error.localizedDescription)"
         }
 
         // Bridge BundledLLMService status to AppState for Settings and Chat

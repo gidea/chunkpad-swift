@@ -9,6 +9,39 @@ struct Conversation: Identifiable, Sendable {
     let updatedAt: Date
 }
 
+// MARK: - Streaming Error Kind
+
+/// Classifies a network error that occurred during LLM streaming so the UI
+/// can display a specific recovery message.
+enum StreamingErrorKind: Equatable {
+    /// The network connection was lost mid-stream.
+    case connectionLost
+    /// The API returned HTTP 429 (rate limited). `retryAfter` is seconds from the header if present.
+    case rateLimited(retryAfter: Int?)
+    /// Any other error — message is shown as-is.
+    case other(String)
+
+    var userMessage: String {
+        switch self {
+        case .connectionLost:
+            return "Connection lost. Your partial response is shown above."
+        case .rateLimited(let seconds):
+            if let s = seconds {
+                return "Rate limited. Please wait \(s) second\(s == 1 ? "" : "s") before retrying."
+            }
+            return "Rate limited. Please wait a moment before retrying."
+        case .other(let msg):
+            return "Generation failed: \(msg)"
+        }
+    }
+
+    /// True when the user can sensibly retry right now (not a rate-limit).
+    var canRetryNow: Bool {
+        if case .rateLimited = self { return false }
+        return true
+    }
+}
+
 /// Orchestrates the full RAG pipeline:
 /// 1. Verify documents are indexed (embedding model was downloaded during indexing)
 /// 2. Load embedding model from local cache (NEVER triggers a download)
@@ -32,6 +65,16 @@ final class ChatViewModel {
     var isDownloadingModel = false
     var retrievedChunks: [ScoredChunk] = []
     var error: String?
+
+    /// Set when streaming fails with a classified network error.
+    /// Drives the in-chat retry banner (6.4).
+    var streamingError: StreamingErrorKind?
+
+    /// The last user query text, kept so the retry button can re-send without re-typing.
+    var lastUserQuery: String?
+
+    /// The LLM provider that was used for the last message; preserved so retry uses the same.
+    var pendingRetryProvider: LLMProvider?
 
     /// Current conversation id (nil = no conversation selected; new conversation created on first send).
     var currentConversationId: String?
@@ -207,8 +250,13 @@ final class ChatViewModel {
             messages.append(assistantMessage)
             let assistantIndex = messages.count - 1
 
+            // Store retry context for 6.4 network error recovery
+            lastUserQuery = text
+            pendingRetryProvider = provider
+
             generationTask = Task {
                 isGenerating = true
+                streamingError = nil
                 defer {
                     generationTask = nil
                     isGenerating = false
@@ -238,7 +286,15 @@ final class ChatViewModel {
                         await refreshConversations()
                     }
                 } catch {
-                    self.error = "Generation failed: \(error.localizedDescription)"
+                    // 6.4: Classify the error and keep partial response visible
+                    let kind = classify(error)
+                    streamingError = kind
+                    self.error = kind.userMessage
+                    // Partial response is already in messages[assistantIndex].content — keep it
+                    if let cid = currentConversationId, let conversationDB {
+                        try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                        await refreshConversations()
+                    }
                 }
             }
             await generationTask?.value
@@ -444,20 +500,23 @@ final class ChatViewModel {
 
     /// Re-runs only the LLM generation step with the current chunk selection
     /// (skips embedding & search). Replaces the last assistant message.
-    func regenerate(provider: LLMProvider) async {
+    /// - Parameter retryQuery: If provided, overrides the query used for context building (for retry after error).
+    func regenerate(provider: LLMProvider, retryQuery: String? = nil) async {
         guard !retrievedChunks.isEmpty else { return }
 
         // Find the last user query to rebuild the context
         guard let lastUserMessage = messages.last(where: { $0.role == .user }) else { return }
 
         error = nil
+        streamingError = nil
 
         // Remove the last assistant message so we can replace it
         if messages.last?.role == .assistant {
             messages.removeLast()
         }
 
-        let contextMessages = buildContext(scoredChunks: retrievedChunks, query: lastUserMessage.content)
+        let query = retryQuery ?? lastUserMessage.content
+        let contextMessages = buildContext(scoredChunks: retrievedChunks, query: query)
         let client = LLMServiceFactory.client(for: provider)
         let includedChunks = retrievedChunks.filter(\.isIncluded)
         let assistantMessage = Message(
@@ -468,8 +527,12 @@ final class ChatViewModel {
         messages.append(assistantMessage)
         let assistantIndex = messages.count - 1
 
+        // Refresh retry context in case provider changed
+        pendingRetryProvider = provider
+
         generationTask = Task {
             isGenerating = true
+            streamingError = nil
             defer {
                 generationTask = nil
                 isGenerating = false
@@ -499,7 +562,14 @@ final class ChatViewModel {
                     await refreshConversations()
                 }
             } catch {
-                self.error = "Regeneration failed: \(error.localizedDescription)"
+                // 6.4: Classify and keep partial response
+                let kind = classify(error)
+                streamingError = kind
+                self.error = kind.userMessage
+                if let cid = currentConversationId, let conversationDB {
+                    try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                    await refreshConversations()
+                }
             }
         }
         await generationTask?.value
@@ -508,6 +578,46 @@ final class ChatViewModel {
     /// Cancels the current generation (streaming) task. Safe to call when not generating.
     func cancelGeneration() {
         generationTask?.cancel()
+    }
+
+    // MARK: - Streaming Error Classification
+
+    /// Classifies a thrown error from the LLM client into a `StreamingErrorKind`.
+    private func classify(_ error: Error, responseHeaders: [String: String]? = nil) -> StreamingErrorKind {
+        // URLError: network connection lost
+        if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
+            return .connectionLost
+        }
+        // HTTP 429 — look for a message containing "429" or "rate limit"
+        let msg = error.localizedDescription.lowercased()
+        if msg.contains("429") || msg.contains("rate limit") || msg.contains("too many requests") {
+            // Try to parse a Retry-After value from the error description
+            let retryAfter: Int? = {
+                // Pattern: "retry after N" or "retry-after: N"
+                let patterns = ["retry after (\\d+)", "retry-after: (\\d+)"]
+                for pattern in patterns {
+                    if let range = msg.range(of: pattern, options: .regularExpression),
+                       let numStr = msg[range].components(separatedBy: CharacterSet.decimalDigits.inverted).filter({ !$0.isEmpty }).last,
+                       let n = Int(numStr) {
+                        return n
+                    }
+                }
+                return nil
+            }()
+            return .rateLimited(retryAfter: retryAfter)
+        }
+        return .other(error.localizedDescription)
+    }
+
+    // MARK: - Retry Last Message
+
+    /// Re-sends the last user query with the same provider, reusing already-retrieved chunks.
+    /// Skips embedding/search — only re-runs generation.
+    func retryLastMessage() async {
+        guard let provider = pendingRetryProvider,
+              let query = lastUserQuery else { return }
+        streamingError = nil
+        await regenerate(provider: provider, retryQuery: query)
     }
 
     // MARK: - Clear

@@ -56,11 +56,13 @@ struct DocumentProcessor: Sendable {
     ///   - recursive: Whether to recurse into subdirectories.
     ///   - chunkSizeChars: Target chunk size in characters.
     ///   - overlapChars: Overlap between consecutive chunks in characters.
+    ///   - skipped: Parse-failed file URLs and their error reasons are appended here.
     func processDirectory(
         at url: URL,
         recursive: Bool = true,
         chunkSizeChars: Int = defaultChunkSizeChars,
-        overlapChars: Int = defaultOverlapChars
+        overlapChars: Int = defaultOverlapChars,
+        skipped: inout [(url: URL, reason: String)]
     ) async throws -> [URL: [ProcessedChunk]] {
         let fm = FileManager.default
         let supportedExtensions = IndexedDocument.DocumentType.supportedExtensions
@@ -104,11 +106,28 @@ struct DocumentProcessor: Sendable {
                     results[fileURL] = chunks
                 }
             } catch {
-                print("Skipping \(fileURL.lastPathComponent): \(error.localizedDescription)")
+                skipped.append((url: fileURL, reason: error.localizedDescription))
             }
         }
 
         return results
+    }
+
+    /// Backward-compatible overload (silently ignores skipped files).
+    func processDirectory(
+        at url: URL,
+        recursive: Bool = true,
+        chunkSizeChars: Int = defaultChunkSizeChars,
+        overlapChars: Int = defaultOverlapChars
+    ) async throws -> [URL: [ProcessedChunk]] {
+        var ignored: [(url: URL, reason: String)] = []
+        return try await processDirectory(
+            at: url,
+            recursive: recursive,
+            chunkSizeChars: chunkSizeChars,
+            overlapChars: overlapChars,
+            skipped: &ignored
+        )
     }
 
     // MARK: - PDF Processing

@@ -171,6 +171,12 @@ struct DocumentsView: View {
                     .padding(.horizontal)
             }
 
+            // 6.3.4: Per-file retry for parse-failed files
+            if !viewModel.skippedFiles.isEmpty {
+                skippedFilesBanner
+                    .padding(.horizontal)
+            }
+
             if viewModel.hasModifiedChunkFiles {
                 HStack {
                     Image(systemName: "doc.badge.gearshape")
@@ -339,6 +345,44 @@ struct DocumentsView: View {
         .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
     }
 
+    // MARK: - Skipped Files Banner (6.3.4)
+
+    private var skippedFilesBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.yellow)
+                Text("\(viewModel.skippedFiles.count) file\(viewModel.skippedFiles.count == 1 ? "" : "s") could not be parsed")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+            }
+            ForEach(viewModel.skippedFiles, id: \.url) { skipped in
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.badge.exclamationmark")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(skipped.url.lastPathComponent)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                        Text(skipped.reason)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    Button("Retry") {
+                        Task { await viewModel.retrySkippedFile(at: skipped.url) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+            }
+        }
+        .padding(GlassTokens.Padding.element)
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+    }
+
     private func inaccessibleFolderBanner(_ folder: IndexedFolder) -> some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -367,12 +411,29 @@ struct DocumentsView: View {
     }
 
     private func errorBanner(_ message: String) -> some View {
-        HStack {
+        let isEmbeddingError: Bool = {
+            if case .error = appState.embeddingModelStatus { return true }
+            return false
+        }()
+
+        return HStack {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
             Text(message)
                 .font(.caption)
             Spacer()
+            // 6.2: Recovery button when embedding model is in error state
+            if isEmbeddingError {
+                Button("Clear Cache & Retry") {
+                    Task {
+                        await viewModel.clearEmbeddingCacheForRecovery()
+                        viewModel.error = nil
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(.orange)
+            }
             Button("Dismiss") { viewModel.error = nil }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.medium))

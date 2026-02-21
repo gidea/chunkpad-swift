@@ -50,6 +50,16 @@ final class AppState {
     var isDatabaseConnected = false
     var indexedDocumentCount = 0
 
+    /// Non-nil when the main chunkpad.db failed to connect at launch.
+    var initError: String?
+
+    /// Non-nil when chunkpad_chat.db failed to connect at launch.
+    var conversationDBError: String?
+
+    /// Set by ChunkpadApp so the error banner's "Retry" button can call initializeDatabase() again.
+    @ObservationIgnored
+    var retryDatabaseInit: (() async -> Void)?
+
     /// Separate SQLite DB for conversations and messages only (chunkpad_chat.db).
     /// Connected at launch in ChunkpadApp.
     let conversationDatabase = ConversationDatabaseService()

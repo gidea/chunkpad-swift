@@ -44,6 +44,12 @@ final class IndexingViewModel {
     /// Whether the chunk preview sheet is visible.
     var showChunkPreview = false
 
+    // MARK: - Parse-Failed Files (6.3.4)
+
+    /// Files that failed to parse during the most recent processDirectory call,
+    /// with their error reasons. Shown in DocumentsView with per-file Retry buttons.
+    var skippedFiles: [(url: URL, reason: String)] = []
+
     // MARK: - Chunk Files (Markdown on Disk)
 
     /// Indexed folders (loaded from DB). For MVP, we use the first as the active folder.
@@ -166,6 +172,7 @@ final class IndexingViewModel {
         lastProcessedResults = []
         lastProcessedTotalChunks = 0
         chunkFileTree = nil
+        skippedFiles = []
 
         let chunkSizeChars = appState?.chunkSizeChars ?? DocumentProcessor.defaultChunkSizeChars
         let overlapChars = appState?.chunkOverlapChars ?? DocumentProcessor.defaultOverlapChars
@@ -174,11 +181,14 @@ final class IndexingViewModel {
         do {
             currentDocument = "Scanning folder..."
 
+            var skipped: [(url: URL, reason: String)] = []
             let fileChunks = try await processor.processDirectory(
                 at: rootURL,
                 chunkSizeChars: chunkSizeChars,
-                overlapChars: overlapChars
+                overlapChars: overlapChars,
+                skipped: &skipped
             )
+            skippedFiles = skipped
 
             totalFiles = fileChunks.count
 
@@ -563,6 +573,61 @@ final class IndexingViewModel {
         let chunks = approvedChunksForEmbed()
         guard !chunks.isEmpty else { return }
         await embedApprovedChunks(from: chunks)
+    }
+
+    /// Clears the embedding model cache and resets the status so the next
+    /// embed operation triggers a fresh download. Call when the embedding model
+    /// is in an `.error` state and the user wants to recover.
+    func clearEmbeddingCacheForRecovery() async {
+        // Delete the HuggingFace hub cache directory where the embedding model is stored
+        let cacheDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cache/huggingface/hub")
+        try? FileManager.default.removeItem(at: cacheDir)
+        appState?.embeddingModelStatus = .notDownloaded
+    }
+
+    // MARK: - Retry Parse-Failed File (6.3.4)
+
+    /// Retries parsing a single previously-failed file.
+    /// On success: removes it from `skippedFiles`, writes its chunk markdown, rebuilds the tree.
+    /// On failure: updates the error reason in `skippedFiles`.
+    func retrySkippedFile(at fileURL: URL) async {
+        let chunkSizeChars = appState?.chunkSizeChars ?? DocumentProcessor.defaultChunkSizeChars
+        let overlapChars = appState?.chunkOverlapChars ?? DocumentProcessor.defaultOverlapChars
+        guard let folder = indexedFolder else { return }
+        let rootURL = folder.rootURL.standardized
+
+        // Check file still exists
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            updateSkippedReason(for: fileURL, reason: "File no longer available")
+            return
+        }
+
+        do {
+            let chunks = try await processor.processFile(
+                at: fileURL,
+                chunkSizeChars: chunkSizeChars,
+                overlapChars: overlapChars
+            )
+            guard !chunks.isEmpty else {
+                updateSkippedReason(for: fileURL, reason: "File produced no chunks after retry")
+                return
+            }
+            // Write chunk markdown file
+            _ = try chunkFileService.writeChunks(chunks, sourceFileURL: fileURL, rootFolderURL: rootURL)
+            // Remove from skipped list
+            skippedFiles.removeAll { $0.url == fileURL }
+            // Rebuild tree so the new chunk file appears in the sidebar
+            await refreshChunkTree()
+        } catch {
+            updateSkippedReason(for: fileURL, reason: error.localizedDescription)
+        }
+    }
+
+    private func updateSkippedReason(for url: URL, reason: String) {
+        if let idx = skippedFiles.firstIndex(where: { $0.url == url }) {
+            skippedFiles[idx] = (url: url, reason: reason)
+        }
     }
 
     /// Deletes all data from all tables. Optionally deletes chunk files from disk.

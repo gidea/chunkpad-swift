@@ -10,8 +10,9 @@ struct ChatView: View {
             messagesArea
 
             if let errorMessage = viewModel.error {
-                errorBanner(message: errorMessage) {
+                errorBanner(message: errorMessage, streamingError: viewModel.streamingError) {
                     viewModel.error = nil
+                    viewModel.streamingError = nil
                 }
             }
 
@@ -56,7 +57,11 @@ struct ChatView: View {
 
     // MARK: - Error Banner
 
-    private func errorBanner(message: String, onDismiss: @escaping () -> Void) -> some View {
+    private func errorBanner(
+        message: String,
+        streamingError: StreamingErrorKind?,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
@@ -64,6 +69,15 @@ struct ChatView: View {
                 .font(.caption)
                 .foregroundStyle(.primary)
             Spacer(minLength: 8)
+            // 6.4: Retry button for recoverable network errors
+            if let kind = streamingError, kind.canRetryNow {
+                Button("Retry") {
+                    onDismiss()
+                    retryLastMessage()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
             Button("Dismiss", role: .cancel, action: onDismiss)
                 .buttonStyle(.borderless)
                 .font(.caption.weight(.medium))
@@ -287,6 +301,20 @@ struct ChatView: View {
         } else if viewModel.isBundledLLMReady {
             let provider = viewModel.makeBundledProvider()
             Task { await viewModel.regenerate(provider: provider) }
+        }
+    }
+
+    /// 6.4: Retry the last message after a network error (uses stored provider + existing chunks).
+    private func retryLastMessage() {
+        if let provider = viewModel.pendingRetryProvider {
+            Task { await viewModel.retryLastMessage() }
+            return
+        }
+        // Fallback: resolve provider fresh
+        if let provider = appState.resolvedProvider() {
+            Task { await viewModel.retryLastMessage() }
+        } else if viewModel.isBundledLLMReady {
+            Task { await viewModel.retryLastMessage() }
         }
     }
 
