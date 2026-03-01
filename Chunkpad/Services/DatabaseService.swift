@@ -360,6 +360,14 @@ actor DatabaseService {
         }
     }
 
+    func deleteChunk(id: String) throws {
+        try performTransaction {
+            try execute("DELETE FROM vec_chunks WHERE chunk_id = ?", bindings: [.text(id)])
+            try execute("DELETE FROM embedded_chunk_refs WHERE chunk_ref_id = ?", bindings: [.text(id)])
+            try execute("DELETE FROM chunks WHERE id = ?", bindings: [.text(id)])
+        }
+    }
+
     // MARK: - Indexed Folders
 
     func insertIndexedFolder(_ folder: IndexedFolder, fileCount: Int, chunkCount: Int) throws {

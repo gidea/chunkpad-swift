@@ -59,6 +59,11 @@ final class AppState {
     /// Maximum tokens for LLM response.
     var llmMaxTokens: Int = 4096
 
+    // MARK: - Pinned Documents
+
+    /// Document IDs that should always be included in RAG context. Persisted across sessions.
+    var pinnedDocumentIDs: Set<String> = []
+
     // MARK: - Database Status
 
     var isDatabaseConnected = false
@@ -105,6 +110,7 @@ final class AppState {
         static let searchMinScore = "profile_search_min_score"
         static let llmTemperature = "profile_llm_temperature"
         static let llmMaxTokens = "profile_llm_max_tokens"
+        static let pinnedDocumentIDs = "profile_pinned_document_ids"
     }
 
     private static let keychainAnthropic = "anthropic_api_key"
@@ -129,6 +135,9 @@ final class AppState {
         llmMaxTokens = Self.defaults.object(forKey: ProfileKey.llmMaxTokens) as? Int ?? 4096
         anthropicAPIKey = KeychainHelper.get(account: Self.keychainAnthropic) ?? ""
         openaiAPIKey = KeychainHelper.get(account: Self.keychainOpenAI) ?? ""
+        if let pinned = Self.defaults.stringArray(forKey: ProfileKey.pinnedDocumentIDs) {
+            pinnedDocumentIDs = Set(pinned)
+        }
     }
 
     /// Persist current settings and API keys. Call when any persisted property changes (e.g. from Settings).
@@ -145,6 +154,11 @@ final class AppState {
         Self.defaults.set(searchMinScore, forKey: ProfileKey.searchMinScore)
         Self.defaults.set(llmTemperature, forKey: ProfileKey.llmTemperature)
         Self.defaults.set(llmMaxTokens, forKey: ProfileKey.llmMaxTokens)
+        if pinnedDocumentIDs.isEmpty {
+            Self.defaults.removeObject(forKey: ProfileKey.pinnedDocumentIDs)
+        } else {
+            Self.defaults.set(Array(pinnedDocumentIDs), forKey: ProfileKey.pinnedDocumentIDs)
+        }
         if anthropicAPIKey.isEmpty {
             KeychainHelper.remove(account: Self.keychainAnthropic)
         } else {
