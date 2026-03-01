@@ -4,6 +4,8 @@ import Foundation
 struct OllamaClient: LLMClient, Sendable {
     let endpoint: String
     let model: String
+    let temperature: Double
+    let maxTokens: Int
 
     private var chatURL: URL {
         URL(string: "\(endpoint)/api/chat")!
@@ -15,7 +17,8 @@ struct OllamaClient: LLMClient, Sendable {
         let body = OllamaRequest(
             model: model,
             messages: messages.map { .init(role: $0.role, content: $0.content) },
-            stream: false
+            stream: false,
+            options: OllamaOptions(temperature: temperature, num_predict: maxTokens)
         )
 
         var request = URLRequest(url: chatURL)
@@ -42,7 +45,8 @@ struct OllamaClient: LLMClient, Sendable {
                     let body = OllamaRequest(
                         model: model,
                         messages: messages.map { .init(role: $0.role, content: $0.content) },
-                        stream: true
+                        stream: true,
+                        options: OllamaOptions(temperature: temperature, num_predict: maxTokens)
                     )
 
                     var request = URLRequest(url: chatURL)
@@ -80,6 +84,12 @@ private struct OllamaRequest: Encodable {
     let model: String
     let messages: [OllamaMessage]
     let stream: Bool
+    let options: OllamaOptions?
+}
+
+private struct OllamaOptions: Encodable {
+    let temperature: Double
+    let num_predict: Int
 }
 
 private struct OllamaMessage: Codable {

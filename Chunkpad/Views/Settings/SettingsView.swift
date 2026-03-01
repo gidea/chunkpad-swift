@@ -3,6 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
 
+    @State private var anthropicValidation: ValidationState = .idle
+    @State private var openaiValidation: ValidationState = .idle
+    @State private var ollamaValidation: ValidationState = .idle
+
     var body: some View {
         @Bindable var appState = appState
 
@@ -11,7 +15,9 @@ struct SettingsView: View {
             embeddingsSection
             llamaSection
             documentIndexingSection(appState: $appState)
+            searchSection(appState: $appState)
             generationSection(appState: $appState)
+            llmParametersSection(appState: $appState)
             privacyNote
             aboutSection
         }
@@ -20,13 +26,17 @@ struct SettingsView: View {
         .onChange(of: appState.generationMode) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.anthropicModel) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.openaiModel) { _, _ in appState.saveToUserProfile() }
-        .onChange(of: appState.anthropicAPIKey) { _, _ in appState.saveToUserProfile() }
-        .onChange(of: appState.openaiAPIKey) { _, _ in appState.saveToUserProfile() }
-        .onChange(of: appState.ollamaEndpoint) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.anthropicAPIKey) { _, _ in appState.saveToUserProfile(); anthropicValidation = .idle }
+        .onChange(of: appState.openaiAPIKey) { _, _ in appState.saveToUserProfile(); openaiValidation = .idle }
+        .onChange(of: appState.ollamaEndpoint) { _, _ in appState.saveToUserProfile(); ollamaValidation = .idle }
         .onChange(of: appState.ollamaModel) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.contextSize) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkSizeTokens) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkOverlapTokens) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.searchResultCount) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.searchMinScore) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.llmTemperature) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.llmMaxTokens) { _, _ in appState.saveToUserProfile() }
     }
 
     // MARK: - Database
@@ -231,6 +241,39 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Search
+
+    @ViewBuilder
+    private func searchSection(appState: Bindable<AppState>) -> some View {
+        Section("Search") {
+            LabeledContent("Max results") {
+                TextField(
+                    "10",
+                    value: appState.searchResultCount,
+                    format: .number
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 80)
+                .multilineTextAlignment(.trailing)
+            }
+
+            LabeledContent("Min relevance score") {
+                HStack(spacing: 8) {
+                    Slider(value: appState.searchMinScore, in: 0.0...1.0, step: 0.05)
+                        .frame(width: 150)
+                    Text(String(format: "%.2f", appState.wrappedValue.searchMinScore))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 40)
+                }
+            }
+
+            Text("Max results caps the number of document chunks sent to the LLM. Min relevance filters out low-quality matches.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Generation Model
 
     @ViewBuilder
@@ -264,6 +307,16 @@ struct SettingsView: View {
                     Text(model.displayName).tag(model.id)
                 }
             }
+
+            HStack(spacing: 8) {
+                Button("Test API Key") {
+                    Task { await testAnthropicKey() }
+                }
+                .controlSize(.small)
+                .disabled(appState.wrappedValue.anthropicAPIKey.isEmpty || anthropicValidation == .testing)
+
+                validationIndicator(state: anthropicValidation)
+            }
         }
 
         Section("ChatGPT (OpenAI)") {
@@ -275,6 +328,16 @@ struct SettingsView: View {
                     Text(model.displayName).tag(model.id)
                 }
             }
+
+            HStack(spacing: 8) {
+                Button("Test API Key") {
+                    Task { await testOpenAIKey() }
+                }
+                .controlSize(.small)
+                .disabled(appState.wrappedValue.openaiAPIKey.isEmpty || openaiValidation == .testing)
+
+                validationIndicator(state: openaiValidation)
+            }
         }
 
         // Ollama-specific settings (only shown when Ollama is selected)
@@ -284,7 +347,50 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                 TextField("Model", text: appState.ollamaModel, prompt: Text("llama3.3"))
                     .textFieldStyle(.roundedBorder)
+
+                HStack(spacing: 8) {
+                    Button("Test Connection") {
+                        Task { await testOllamaEndpoint() }
+                    }
+                    .controlSize(.small)
+                    .disabled(appState.wrappedValue.ollamaEndpoint.isEmpty || ollamaValidation == .testing)
+
+                    validationIndicator(state: ollamaValidation)
+                }
             }
+        }
+    }
+
+    // MARK: - LLM Parameters
+
+    @ViewBuilder
+    private func llmParametersSection(appState: Bindable<AppState>) -> some View {
+        Section("LLM Parameters") {
+            LabeledContent("Temperature") {
+                HStack(spacing: 8) {
+                    Slider(value: appState.llmTemperature, in: 0.0...1.0, step: 0.1)
+                        .frame(width: 150)
+                    Text(String(format: "%.1f", appState.wrappedValue.llmTemperature))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 30)
+                }
+            }
+
+            LabeledContent("Max tokens") {
+                TextField(
+                    "4096",
+                    value: appState.llmMaxTokens,
+                    format: .number
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 80)
+                .multilineTextAlignment(.trailing)
+            }
+
+            Text("Temperature controls randomness (0 = focused, 1 = creative). Max tokens caps response length.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -325,4 +431,118 @@ struct SettingsView: View {
             }
         }
     }
+
+    // MARK: - API Validation
+
+    @ViewBuilder
+    private func validationIndicator(state: ValidationState) -> some View {
+        switch state {
+        case .idle:
+            EmptyView()
+        case .testing:
+            ProgressView()
+                .controlSize(.small)
+        case .success:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failure(let msg):
+            HStack(spacing: 4) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func testAnthropicKey() async {
+        anthropicValidation = .testing
+        do {
+            var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(appState.anthropicAPIKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            let body: [String: Any] = [
+                "model": appState.anthropicModel,
+                "max_tokens": 1,
+                "messages": [["role": "user", "content": "hi"]]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.timeoutInterval = 10
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                anthropicValidation = .failure("No response")
+                return
+            }
+            if http.statusCode == 200 {
+                anthropicValidation = .success
+            } else if http.statusCode == 401 {
+                anthropicValidation = .failure("Invalid API key")
+            } else {
+                anthropicValidation = .failure("HTTP \(http.statusCode)")
+            }
+        } catch {
+            anthropicValidation = .failure(error.localizedDescription)
+        }
+    }
+
+    private func testOpenAIKey() async {
+        openaiValidation = .testing
+        do {
+            var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(appState.openaiAPIKey)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 10
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                openaiValidation = .failure("No response")
+                return
+            }
+            if http.statusCode == 200 {
+                openaiValidation = .success
+            } else if http.statusCode == 401 {
+                openaiValidation = .failure("Invalid API key")
+            } else {
+                openaiValidation = .failure("HTTP \(http.statusCode)")
+            }
+        } catch {
+            openaiValidation = .failure(error.localizedDescription)
+        }
+    }
+
+    private func testOllamaEndpoint() async {
+        ollamaValidation = .testing
+        do {
+            guard let url = URL(string: "\(appState.ollamaEndpoint)/api/tags") else {
+                ollamaValidation = .failure("Invalid URL")
+                return
+            }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 5
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                ollamaValidation = .failure("No response")
+                return
+            }
+            if http.statusCode == 200 {
+                ollamaValidation = .success
+            } else {
+                ollamaValidation = .failure("HTTP \(http.statusCode)")
+            }
+        } catch {
+            ollamaValidation = .failure("Not reachable")
+        }
+    }
+}
+
+// MARK: - Validation State
+
+private enum ValidationState: Equatable {
+    case idle
+    case testing
+    case success
+    case failure(String)
 }

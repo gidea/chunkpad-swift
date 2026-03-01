@@ -27,16 +27,20 @@ enum LLMServiceFactory {
         case .cloud(let config):
             switch config.provider {
             case .anthropic:
-                return AnthropicClient(apiKey: config.apiKey, model: config.model)
+                return AnthropicClient(apiKey: config.apiKey, model: config.model,
+                                       temperature: config.temperature, maxTokens: config.maxTokens)
             case .openai:
-                return OpenAIClient(apiKey: config.apiKey, model: config.model)
+                return OpenAIClient(apiKey: config.apiKey, model: config.model,
+                                    temperature: config.temperature, maxTokens: config.maxTokens)
             }
         case .local(let config):
             switch config.provider {
             case .ollama:
-                return OllamaClient(endpoint: config.endpoint, model: config.modelName)
+                return OllamaClient(endpoint: config.endpoint, model: config.modelName,
+                                    temperature: config.temperature, maxTokens: config.maxTokens)
             case .bundled:
-                return BundledLLMClient(service: BundledLLMService.shared)
+                return BundledLLMClient(service: BundledLLMService.shared,
+                                        temperature: config.temperature, maxTokens: config.maxTokens)
             }
         }
     }
@@ -48,18 +52,23 @@ enum LLMServiceFactory {
 /// Uses Llama 3.2 running locally on Apple Silicon via MLX for text generation.
 struct BundledLLMClient: LLMClient, Sendable {
     let service: BundledLLMService
+    let temperature: Double
+    let maxTokens: Int
 
     func chat(messages: [ChatMessage]) async throws -> String {
-        try await service.generate(messages: messages)
+        try await service.generate(messages: messages, temperature: temperature, maxTokens: maxTokens)
     }
 
     func chatStream(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
         let service = self.service
         let messages = messages
+        let temperature = self.temperature
+        let maxTokens = self.maxTokens
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let stream = await service.generateStream(messages: messages)
+                    let stream = await service.generateStream(
+                        messages: messages, temperature: temperature, maxTokens: maxTokens)
                     for try await token in stream {
                         continuation.yield(token)
                     }

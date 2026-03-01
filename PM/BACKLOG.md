@@ -65,15 +65,17 @@
 
 ---
 
-## Epic 5: Settings & Configuration
+## Epic 5: Settings & Configuration (partial — Sprint 7 complete)
 
 **Goal:** All configurable params exposed, validated, clearly connected to features.
 
+*Tasks 5.1–5.3 shipped in Sprint 7. See `DONE.md` Sprint 7 for details.*
+
 | Task | Priority | Notes |
 |---|---|---|
-| 5.1 Configurable search parameters (k, minScore) | P1 | Hardcoded today |
-| 5.2 API key validation ("Test" button) | P2 | Anthropic, OpenAI, Ollama |
-| 5.3 Configurable LLM parameters (temp, maxTokens) | P2 | Hardcoded in BundledLLMService |
+| ~~5.1 Configurable search parameters (k, minScore)~~ | ~~P1~~ | ✅ Done — Slider + TextField in Settings, clamped in ChatViewModel |
+| ~~5.2 API key validation ("Test" button)~~ | ~~P2~~ | ✅ Done — Test buttons for Anthropic, OpenAI, Ollama |
+| ~~5.3 Configurable LLM parameters (temp, maxTokens)~~ | ~~P2~~ | ✅ Done — Threaded through all 4 LLM clients |
 | 5.4 Database management in Settings | P3 | Size, count, clear, export |
 
 ---
@@ -93,14 +95,16 @@
 
 ---
 
-## Epic 7: Polish & UX
+## Epic 7: Polish & UX (partial — Sprint 7 complete)
 
 **Goal:** Quality-of-life improvements that make the app feel polished.
 
+*Tasks 7.1–7.2 shipped in Sprint 7. See `DONE.md` Sprint 7 for details.*
+
 | Task | Priority | Notes |
 |---|---|---|
-| 7.1 Markdown rendering for assistant responses | P2 | AttributedString or SwiftUI markdown |
-| 7.2 Distinguish pinned chunks visually | P2 | Pin icon, distinct card style |
+| ~~7.1 Markdown rendering for assistant responses~~ | ~~P2~~ | ✅ Done — MarkdownContentView with code block support |
+| ~~7.2 Distinguish pinned chunks visually~~ | ~~P2~~ | ✅ Done — Pin icon, orange tint, "Pinned" pill |
 | 7.5 Generation mode indicator (dot per provider) | P3 | Green = configured, gray = not |
 | 7.3 Collapsible chunks bar | P3 | Chevron toggle, compact summary |
 | 7.4 Pre-query document pinning | P3 | Always-visible pin button |
@@ -114,5 +118,5 @@
 |---|---|---|
 | ~~**Sprint 5**~~ | ~~Model Management~~ | ✅ Complete |
 | ~~**Sprint 6**~~ | ~~Error Handling~~ | ✅ Complete |
-| **Sprint 7** | Settings + Polish | 5.1, 5.2, 5.3, 7.1, 7.2 |
+| ~~**Sprint 7**~~ | ~~Settings + Polish~~ | ✅ Complete |
 | **Sprint 8** | Documents Polish | 2.3, 2.5.1, 2.6, 4.6, 4.7 |

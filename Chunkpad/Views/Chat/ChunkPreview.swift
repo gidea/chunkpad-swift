@@ -26,7 +26,10 @@ struct ChunkPreview: View {
         }
         .padding(GlassTokens.Padding.element)
         .opacity(scoredChunk.isIncluded ? 1 : 0.5)
-        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+        .glassEffect(
+            scoredChunk.isPinned ? .regular.tint(.orange) : .regular,
+            in: .rect(cornerRadius: GlassTokens.Radius.element)
+        )
     }
 
     private var header: some View {
@@ -39,16 +42,27 @@ struct ChunkPreview: View {
                 onToggle()
             }
 
+            if scoredChunk.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             Text(chunk.title)
                 .font(.subheadline.weight(.medium))
                 .lineLimit(1)
 
             Spacer()
 
-            // Relevance score pill
+            // Relevance score / pinned pill
             GlassPill {
-                Text(scoredChunk.relevancePercent)
-                    .foregroundStyle(scoreColor)
+                if scoredChunk.isPinned {
+                    Label("Pinned", systemImage: "pin.fill")
+                        .foregroundStyle(.orange)
+                } else {
+                    Text(scoredChunk.relevancePercent)
+                        .foregroundStyle(scoreColor)
+                }
             }
 
             if let slideNumber = chunk.slideNumber {

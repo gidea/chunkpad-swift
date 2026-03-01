@@ -223,11 +223,13 @@ final class ChatViewModel {
             let queryEmbedding = try await embedder.embedQuery(text)
 
             // 5. Hybrid search: vector KNN + full-text (with min-score threshold)
+            let k = max(1, min(appState?.searchResultCount ?? 10, 20))
+            let minScore = max(0.0, min(appState?.searchMinScore ?? 0.1, 1.0))
             var scoredChunks = try await database.hybridSearch(
                 queryEmbedding: queryEmbedding,
                 queryText: text,
-                k: 10,
-                minScore: 0.1
+                k: k,
+                minScore: minScore
             )
 
             // 5b. Merge pinned document chunks (boosted to score 1.0)
@@ -386,7 +388,11 @@ final class ChatViewModel {
 
     /// Build an LLMProvider for the bundled Llama model.
     func makeBundledProvider() -> LLMProvider {
-        .local(LocalConfig(provider: .bundled))
+        .local(LocalConfig(
+            provider: .bundled,
+            temperature: appState?.llmTemperature ?? 0.7,
+            maxTokens: appState?.llmMaxTokens ?? 2048
+        ))
     }
 
     // MARK: - Pin Documents
@@ -424,7 +430,7 @@ final class ChatViewModel {
         for docID in pinnedDocumentIDs {
             let chunks = try await database.chunksForDocument(documentID: docID)
             for chunk in chunks where !existingIDs.contains(chunk.id) {
-                pinnedChunks.append(ScoredChunk(chunk: chunk, relevanceScore: 1.0))
+                pinnedChunks.append(ScoredChunk(chunk: chunk, relevanceScore: 1.0, isPinned: true))
             }
         }
         if !pinnedChunks.isEmpty {

@@ -133,7 +133,7 @@ actor BundledLLMService {
     // MARK: - Generate (Non-streaming)
 
     /// Generate a complete response from the given messages.
-    func generate(messages: [ChatMessage]) async throws -> String {
+    func generate(messages: [ChatMessage], temperature: Double = 0.7, maxTokens: Int = 2048) async throws -> String {
         guard let container, status.isReady else {
             throw LLMError.requestFailed("Bundled LLM not loaded. Download Llama first.")
         }
@@ -144,7 +144,7 @@ actor BundledLLMService {
             let userInput = UserInput(messages: mlxMessages)
             let input = try await context.processor.prepare(input: userInput)
 
-            let parameters = GenerateParameters(temperature: 0.6)
+            let parameters = GenerateParameters(temperature: Float(temperature))
             var detokenizer = NaiveStreamingDetokenizer(tokenizer: context.tokenizer)
             var output = ""
 
@@ -157,7 +157,7 @@ actor BundledLLMService {
                 if let new = detokenizer.next() {
                     output += new
                 }
-                return tokens.count >= 2048 ? .stop : .more
+                return tokens.count >= maxTokens ? .stop : .more
             }
 
             return output
@@ -169,7 +169,7 @@ actor BundledLLMService {
     // MARK: - Generate (Streaming)
 
     /// Stream a response token-by-token from the given messages.
-    func generateStream(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func generateStream(messages: [ChatMessage], temperature: Double = 0.7, maxTokens: Int = 2048) -> AsyncThrowingStream<String, Error> {
         // Capture references while on the actor
         guard let container, status.isReady else {
             return AsyncThrowingStream { continuation in
@@ -186,7 +186,7 @@ actor BundledLLMService {
                         let userInput = UserInput(messages: mlxMessages)
                         let input = try await context.processor.prepare(input: userInput)
 
-                        let parameters = GenerateParameters(temperature: 0.6)
+                        let parameters = GenerateParameters(temperature: Float(temperature))
                         var detokenizer = NaiveStreamingDetokenizer(tokenizer: context.tokenizer)
 
                         let _ = try MLXLMCommon.generate(
@@ -198,7 +198,7 @@ actor BundledLLMService {
                             if let new = detokenizer.next() {
                                 continuation.yield(new)
                             }
-                            return tokens.count >= 2048 ? .stop : .more
+                            return tokens.count >= maxTokens ? .stop : .more
                         }
                     }
                     continuation.finish()
