@@ -45,6 +45,25 @@ final class AppState {
     /// Derived overlap in characters (tokens × 4).
     var chunkOverlapChars: Int { chunkOverlapTokens * 4 }
 
+    // MARK: - Search Parameters
+
+    /// Maximum number of chunks returned by hybrid search.
+    var searchResultCount: Int = 10
+    /// Minimum combined relevance score (0.0–1.0) for a chunk to be included.
+    var searchMinScore: Double = 0.1
+
+    // MARK: - LLM Parameters
+
+    /// Temperature for LLM generation (0.0 = deterministic, 1.0 = creative).
+    var llmTemperature: Double = 0.7
+    /// Maximum tokens for LLM response.
+    var llmMaxTokens: Int = 4096
+
+    // MARK: - Pinned Documents
+
+    /// Document IDs that should always be included in RAG context. Persisted across sessions.
+    var pinnedDocumentIDs: Set<String> = []
+
     // MARK: - Database Status
 
     var isDatabaseConnected = false
@@ -87,6 +106,11 @@ final class AppState {
         static let contextSize = "profile_context_size"
         static let chunkSizeTokens = "profile_chunk_size_tokens"
         static let chunkOverlapTokens = "profile_chunk_overlap_tokens"
+        static let searchResultCount = "profile_search_result_count"
+        static let searchMinScore = "profile_search_min_score"
+        static let llmTemperature = "profile_llm_temperature"
+        static let llmMaxTokens = "profile_llm_max_tokens"
+        static let pinnedDocumentIDs = "profile_pinned_document_ids"
     }
 
     private static let keychainAnthropic = "anthropic_api_key"
@@ -105,8 +129,15 @@ final class AppState {
         contextSize = Self.defaults.object(forKey: ProfileKey.contextSize) as? Int ?? 4096
         chunkSizeTokens = Self.defaults.object(forKey: ProfileKey.chunkSizeTokens) as? Int ?? 1000
         chunkOverlapTokens = Self.defaults.object(forKey: ProfileKey.chunkOverlapTokens) as? Int ?? 100
+        searchResultCount = Self.defaults.object(forKey: ProfileKey.searchResultCount) as? Int ?? 10
+        searchMinScore = Self.defaults.object(forKey: ProfileKey.searchMinScore) as? Double ?? 0.1
+        llmTemperature = Self.defaults.object(forKey: ProfileKey.llmTemperature) as? Double ?? 0.7
+        llmMaxTokens = Self.defaults.object(forKey: ProfileKey.llmMaxTokens) as? Int ?? 4096
         anthropicAPIKey = KeychainHelper.get(account: Self.keychainAnthropic) ?? ""
         openaiAPIKey = KeychainHelper.get(account: Self.keychainOpenAI) ?? ""
+        if let pinned = Self.defaults.stringArray(forKey: ProfileKey.pinnedDocumentIDs) {
+            pinnedDocumentIDs = Set(pinned)
+        }
     }
 
     /// Persist current settings and API keys. Call when any persisted property changes (e.g. from Settings).
@@ -119,6 +150,15 @@ final class AppState {
         Self.defaults.set(contextSize, forKey: ProfileKey.contextSize)
         Self.defaults.set(chunkSizeTokens, forKey: ProfileKey.chunkSizeTokens)
         Self.defaults.set(chunkOverlapTokens, forKey: ProfileKey.chunkOverlapTokens)
+        Self.defaults.set(searchResultCount, forKey: ProfileKey.searchResultCount)
+        Self.defaults.set(searchMinScore, forKey: ProfileKey.searchMinScore)
+        Self.defaults.set(llmTemperature, forKey: ProfileKey.llmTemperature)
+        Self.defaults.set(llmMaxTokens, forKey: ProfileKey.llmMaxTokens)
+        if pinnedDocumentIDs.isEmpty {
+            Self.defaults.removeObject(forKey: ProfileKey.pinnedDocumentIDs)
+        } else {
+            Self.defaults.set(Array(pinnedDocumentIDs), forKey: ProfileKey.pinnedDocumentIDs)
+        }
         if anthropicAPIKey.isEmpty {
             KeychainHelper.remove(account: Self.keychainAnthropic)
         } else {
@@ -138,16 +178,20 @@ final class AppState {
         switch generationMode {
         case .anthropic:
             guard !anthropicAPIKey.isEmpty else { return nil }
-            return .cloud(CloudConfig(provider: .anthropic, apiKey: anthropicAPIKey, model: anthropicModel))
+            return .cloud(CloudConfig(provider: .anthropic, apiKey: anthropicAPIKey, model: anthropicModel,
+                                      temperature: llmTemperature, maxTokens: llmMaxTokens))
         case .openai:
             guard !openaiAPIKey.isEmpty else { return nil }
-            return .cloud(CloudConfig(provider: .openai, apiKey: openaiAPIKey, model: openaiModel))
+            return .cloud(CloudConfig(provider: .openai, apiKey: openaiAPIKey, model: openaiModel,
+                                      temperature: llmTemperature, maxTokens: llmMaxTokens))
         case .ollama:
             return .local(LocalConfig(
                 provider: .ollama,
                 endpoint: ollamaEndpoint,
                 modelName: ollamaModel,
-                contextSize: contextSize
+                contextSize: contextSize,
+                temperature: llmTemperature,
+                maxTokens: llmMaxTokens
             ))
         }
     }

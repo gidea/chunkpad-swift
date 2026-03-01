@@ -6,6 +6,114 @@
 
 ---
 
+## Sprint 8: Documents Polish ✅ Complete
+
+**Goal:** Robust document lifecycle — delete documents/chunks, persist pinned docs and modification dates, conversation management UX, and chunk view overhaul.
+**Status:** ✅ Complete
+
+### Tasks
+
+#### 4.6 Persist pinned document IDs [P2] ✅
+
+Pinned document IDs are in-memory only (`ChatViewModel.pinnedDocumentIDs`). After app restart, all pins are lost.
+
+- [x] **4.6.1** Add `pinnedDocumentIDs` ProfileKey in `AppState` and `Set<String>` property with load/save via UserDefaults
+- [x] **4.6.2** In `ChatViewModel`, computed property backed by `appState.pinnedDocumentIDs`; saves on toggle
+- [x] **4.6.3** Validate pinned IDs on load — `validatePinnedDocuments()` removes IDs for deleted documents
+
+**Edge cases:**
+- Pinned doc deleted between sessions → silently removed from set on validation
+- Empty set → UserDefaults key removed
+
+#### 2.5.1 Persist lastKnownModificationDates to DB [P2] ✅
+
+`IndexingViewModel.lastKnownModificationDates` is in-memory only. After restart, modification detection always reports no changes.
+
+- [x] **2.5.1.1** Persist as `[String: TimeInterval]` in UserDefaults (key: `indexing_last_known_modification_dates`)
+- [x] **2.5.1.2** Load in `IndexingViewModel.init()`; auto-save via `didSet` on property
+- [x] **2.5.1.3** Clear persisted data on removeFolder() and clearAllData() (via property reset triggering didSet)
+
+**Edge cases:**
+- Loading bypass: `isLoadingPersistedDates` flag prevents re-persisting during load
+
+#### 2.6 Delete individual documents/chunks [P2] ✅
+
+No UI to delete individual documents or chunks. Users can only "Clear All Data".
+
+- [x] **2.6.1** Add `deleteChunk(id:)` to `DatabaseService` — cascades vec_chunks → embedded_chunk_refs → chunks
+- [x] **2.6.2** Add `deleteDocument(id:)` and `deleteChunk(id:)` methods to `IndexingViewModel`
+- [x] **2.6.3** Context menu "Delete Document" on document rows in DocumentsView flat list
+- [x] **2.6.4** Context menu "Delete Chunk" on chunk rows in DocumentsView detail
+- [x] **2.6.5** Confirmation alerts before deletion
+- [x] **2.6.6** Refresh document list / chunk tree after deletion; update AppState.indexedDocumentCount
+
+**Edge cases:**
+- Delete while indexing → disabled via `viewModel.isIndexing` guard
+
+#### 4.7 Conversation management UX [P2] ✅
+
+No way to rename, delete, or manage conversations from the sidebar.
+
+- [x] **4.7.1** Added `messageCount(conversationId:)` to `ConversationDatabaseService`
+- [x] **4.7.2** Added `messageCount` field to `Conversation` struct; populated in `refreshConversations()`
+- [x] **4.7.3** Message count displayed in sidebar row (e.g. "· 5 msgs")
+- [x] **4.7.4** Context menu on conversation rows: "Rename" and "Delete"
+- [x] **4.7.5** Swipe-to-delete on conversation rows
+- [x] **4.7.6** Delete confirmation alert; switches to "New Chat" if deleting active conversation
+- [x] **4.7.7** Rename alert with TextField; calls `updateConversation(id:title:updatedAt:)`
+
+**Edge cases:**
+- Rename to empty string → no-op (trimmed, guard !isEmpty)
+- Delete active conversation → clears messages and currentConversationId
+
+#### 2.3 Chunk grid/list view overhaul [P1] ✅
+
+Chunk display is a plain list only. No view mode toggle, no grid cards, no filter bar.
+
+- [x] **2.3.1** Added `ChunkViewMode` enum (`.list`, `.grid`) with segmented picker in toolbar
+- [x] **2.3.2** Grid view: `LazyVGrid` with adaptive columns (min 260), cards showing status, title, content preview, char count
+- [x] **2.3.3** Filter bar: TextField for searching chunks by title/content with clear button
+- [x] **2.3.4** Persisted view mode in UserDefaults (`documents_chunk_view_mode`)
+- [x] **2.3.5** Grid cards use Liquid Glass design (glassEffect, GlassTokens, ChunkStatusBadge)
+- [x] **2.3.6** Empty filter state shows `ContentUnavailableView.search`
+
+---
+
+## Sprint 7: Settings + Polish ✅ Complete
+
+**Goal:** Expose configurable search and generation parameters; add markdown rendering and pinned-chunk polish.
+
+### 5.1 Configurable search parameters [P1] ✅
+- [x] `searchResultCount: Int` (default 10) and `searchMinScore: Double` (default 0.1) in AppState
+- [x] Persisted to UserDefaults via `saveToUserProfile` / `loadFromUserProfile`
+- [x] Passed through `ChatViewModel.sendMessage` → `database.hybridSearch` with clamping (k ∈ [1,20], minScore ∈ [0,1])
+- [x] Search section in SettingsView: TextField for max results, Slider for min relevance score
+
+### 5.2 API key validation ("Test" button) [P2] ✅
+- [x] "Test API Key" button for Anthropic (POST `/v1/messages` with `max_tokens: 1`)
+- [x] "Test API Key" button for OpenAI (GET `/v1/models`)
+- [x] "Test Connection" button for Ollama (GET `{endpoint}/api/tags` with 5s timeout)
+- [x] Inline spinner/checkmark/error indicators; validation resets on key change
+
+### 5.3 Configurable LLM parameters [P2] ✅
+- [x] `llmTemperature: Double` (default 0.7) and `llmMaxTokens: Int` (default 4096) in AppState
+- [x] `temperature` and `maxTokens` added to `CloudConfig` and `LocalConfig`
+- [x] Threaded through `LLMServiceFactory` to all 4 clients (Anthropic, OpenAI, Ollama, BundledLLM)
+- [x] "LLM Parameters" section in SettingsView: Slider for temperature, TextField for max tokens
+
+### 7.1 Markdown rendering for assistant responses [P2] ✅
+- [x] `MarkdownContentView` replaces plain `Text` for assistant messages
+- [x] Fenced code blocks render in monospace with `.quaternary.opacity(0.3)` background
+- [x] Inline markdown via `AttributedString(markdown:, options: .inlineOnlyPreservingWhitespace)`
+- [x] Graceful fallback to plain text for malformed markdown
+
+### 7.2 Distinguish pinned chunks visually [P2] ✅
+- [x] `isPinned: Bool = false` on `ScoredChunk`; set `true` in `addPinnedChunks`
+- [x] Pin icon badge + "Pinned" orange pill in `ChunkPreview` header
+- [x] Orange-tinted glass effect background for pinned cards
+
+---
+
 ## Sprint 6: Error Handling ✅ Complete
 
 **Goal:** Every error the app can encounter is visible to the user with a clear recovery path. No silent failures.

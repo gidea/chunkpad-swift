@@ -16,6 +16,9 @@ struct ScoredChunk: Identifiable, Sendable {
     /// Defaults to `true`; users can toggle it off to exclude a chunk.
     var isIncluded: Bool = true
 
+    /// Whether this chunk came from a pinned document (vs. search retrieval).
+    var isPinned: Bool = false
+
     var id: String { chunk.id }
 
     /// Convenience: relevance as a rounded percentage string, e.g. "87 %".

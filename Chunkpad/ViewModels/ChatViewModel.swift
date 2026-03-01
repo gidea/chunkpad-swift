@@ -7,6 +7,7 @@ struct Conversation: Identifiable, Sendable {
     let title: String
     let createdAt: Date
     let updatedAt: Date
+    var messageCount: Int = 0
 }
 
 // MARK: - Streaming Error Kind
@@ -107,9 +108,14 @@ final class ChatViewModel {
     /// All indexed documents (fetched when the pin sheet opens).
     var indexedDocuments: [IndexedDocument] = []
 
-    /// IDs of documents the user has pinned. Pinned documents' chunks
-    /// are always included at the top of search results.
-    var pinnedDocumentIDs: Set<String> = []
+    /// IDs of documents the user has pinned. Backed by AppState for persistence.
+    var pinnedDocumentIDs: Set<String> {
+        get { appState?.pinnedDocumentIDs ?? [] }
+        set {
+            appState?.pinnedDocumentIDs = newValue
+            appState?.saveToUserProfile()
+        }
+    }
 
     // MARK: - Dependencies
 
@@ -160,10 +166,42 @@ final class ChatViewModel {
     func refreshConversations() async {
         guard let conversationDB else { return }
         do {
-            let list = try await conversationDB.fetchConversations(limit: 100)
+            var list = try await conversationDB.fetchConversations(limit: 100)
+            for i in list.indices {
+                list[i].messageCount = (try? await conversationDB.messageCount(conversationId: list[i].id)) ?? 0
+            }
             await MainActor.run { conversations = list }
         } catch {
             // Non-fatal; list stays as-is
+        }
+    }
+
+    /// Deletes a conversation from the chat DB.
+    func deleteConversation(id: String) async {
+        guard let conversationDB else { return }
+        do {
+            try await conversationDB.deleteConversation(id: id)
+            if currentConversationId == id {
+                currentConversationId = nil
+                messages.removeAll()
+                retrievedChunks.removeAll()
+            }
+            await refreshConversations()
+        } catch {
+            self.error = "Failed to delete conversation: \(error.localizedDescription)"
+        }
+    }
+
+    /// Renames a conversation.
+    func renameConversation(id: String, title: String) async {
+        guard let conversationDB else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try await conversationDB.updateConversation(id: id, title: trimmed, updatedAt: Date())
+            await refreshConversations()
+        } catch {
+            self.error = "Failed to rename conversation: \(error.localizedDescription)"
         }
     }
 
@@ -223,11 +261,13 @@ final class ChatViewModel {
             let queryEmbedding = try await embedder.embedQuery(text)
 
             // 5. Hybrid search: vector KNN + full-text (with min-score threshold)
+            let k = max(1, min(appState?.searchResultCount ?? 10, 20))
+            let minScore = max(0.0, min(appState?.searchMinScore ?? 0.1, 1.0))
             var scoredChunks = try await database.hybridSearch(
                 queryEmbedding: queryEmbedding,
                 queryText: text,
-                k: 10,
-                minScore: 0.1
+                k: k,
+                minScore: minScore
             )
 
             // 5b. Merge pinned document chunks (boosted to score 1.0)
@@ -386,7 +426,11 @@ final class ChatViewModel {
 
     /// Build an LLMProvider for the bundled Llama model.
     func makeBundledProvider() -> LLMProvider {
-        .local(LocalConfig(provider: .bundled))
+        .local(LocalConfig(
+            provider: .bundled,
+            temperature: appState?.llmTemperature ?? 0.7,
+            maxTokens: appState?.llmMaxTokens ?? 2048
+        ))
     }
 
     // MARK: - Pin Documents
@@ -412,6 +456,22 @@ final class ChatViewModel {
         }
     }
 
+    /// Remove pinned IDs that reference documents no longer in the database.
+    func validatePinnedDocuments() async {
+        guard !pinnedDocumentIDs.isEmpty else { return }
+        do {
+            try await database.connect()
+            let docs = try await database.listDocuments()
+            let validIDs = Set(docs.map(\.id))
+            let invalid = pinnedDocumentIDs.subtracting(validIDs)
+            if !invalid.isEmpty {
+                pinnedDocumentIDs = pinnedDocumentIDs.intersection(validIDs)
+            }
+        } catch {
+            // Non-fatal; keep existing pins
+        }
+    }
+
     /// Fetches chunks for all pinned documents and merges them into the
     /// current `retrievedChunks` with a high relevance score (1.0),
     /// avoiding duplicates.
@@ -424,7 +484,7 @@ final class ChatViewModel {
         for docID in pinnedDocumentIDs {
             let chunks = try await database.chunksForDocument(documentID: docID)
             for chunk in chunks where !existingIDs.contains(chunk.id) {
-                pinnedChunks.append(ScoredChunk(chunk: chunk, relevanceScore: 1.0))
+                pinnedChunks.append(ScoredChunk(chunk: chunk, relevanceScore: 1.0, isPinned: true))
             }
         }
         if !pinnedChunks.isEmpty {

@@ -11,67 +11,73 @@
 
 ---
 
-## Sprint 7: Settings + Polish
+## Sprint 8: Documents Polish ✅ Complete
 
-**Goal:** Expose configurable search and generation parameters; add markdown rendering and pinned-chunk polish.
-**Status:** ← Next (not started)
+**Goal:** Robust document lifecycle — delete documents/chunks, persist pinned docs and modification dates, conversation management UX, and chunk view overhaul.
+**Status:** ✅ Complete
 
 ### Tasks
 
-#### 5.1 Configurable search parameters [P1]
+#### 4.6 Persist pinned document IDs [P2] ✅
 
-`hybridSearch` uses hardcoded `k: 10` and `minScore: 0.1` — no way to tune retrieval quality.
+Pinned document IDs are in-memory only (`ChatViewModel.pinnedDocumentIDs`). After app restart, all pins are lost.
 
-- [ ] **5.1.1** Add `searchResultCount: Int` (default 10) and `searchMinScore: Double` (default 0.1) to `AppState`
-- [ ] **5.1.2** Persist both to `UserDefaults` via `saveToUserProfile` / `loadFromUserProfile`
-- [ ] **5.1.3** Pass both through `ChatViewModel.sendMessage` → `database.hybridSearch`
-- [ ] **5.1.4** Add sliders in SettingsView: "Results returned (k)" 5–20, "Min relevance score" 0.0–0.5
-- [ ] **5.1.5** Show current value inline next to each slider
+- [x] **4.6.1** Add `pinnedDocumentIDs` ProfileKey in `AppState` and `Set<String>` property with load/save via UserDefaults
+- [x] **4.6.2** In `ChatViewModel`, computed property backed by `appState.pinnedDocumentIDs`; saves on toggle
+- [x] **4.6.3** Validate pinned IDs on load — `validatePinnedDocuments()` removes IDs for deleted documents
 
 **Edge cases:**
-- k = 0 → guard against empty results; k > 20 → cap at 20 to avoid context overflow
-- minScore = 0 → return all results including very low relevance
+- Pinned doc deleted between sessions → silently removed from set on validation
+- Empty set → UserDefaults key removed
 
-#### 5.2 API key validation ("Test" button) [P2]
+#### 2.5.1 Persist lastKnownModificationDates to DB [P2] ✅
 
-No feedback when a key is wrong until the first chat attempt fails.
+`IndexingViewModel.lastKnownModificationDates` is in-memory only. After restart, modification detection always reports no changes.
 
-- [ ] **5.2.1** Add "Test" button next to Anthropic API key field in SettingsView
-- [ ] **5.2.2** Button calls a lightweight API ping (e.g. list models or minimal chat completion)
-- [ ] **5.2.3** Show inline ✅ or ❌ with error message; spinner while pending
-- [ ] **5.2.4** Repeat for OpenAI key
-- [ ] **5.2.5** For Ollama: ping `{endpoint}/api/tags` and show model count or error
+- [x] **2.5.1.1** Persist as `[String: TimeInterval]` in UserDefaults (key: `indexing_last_known_modification_dates`)
+- [x] **2.5.1.2** Load in `IndexingViewModel.init()`; auto-save via `didSet` on property
+- [x] **2.5.1.3** Clear persisted data on removeFolder() and clearAllData() (via property reset triggering didSet)
 
 **Edge cases:**
-- Network unavailable → clear error message, not crash
-- Empty key → button disabled
+- Loading bypass: `isLoadingPersistedDates` flag prevents re-persisting during load
 
-#### 7.1 Markdown rendering for assistant responses [P2]
+#### 2.6 Delete individual documents/chunks [P2] ✅
 
-Assistant responses use monospace plain text — headers, bold, lists look broken.
+No UI to delete individual documents or chunks. Users can only "Clear All Data".
 
-- [ ] **7.1.1** Render `Message.content` with SwiftUI's `.init(_ attributedContent:)` or `Text` with markdown support
-- [ ] **7.1.2** Ensure code blocks use monospaced font with background
-- [ ] **7.1.3** Test with headers, bullet lists, bold, inline code
+- [x] **2.6.1** Add `deleteChunk(id:)` to `DatabaseService` — cascades vec_chunks → embedded_chunk_refs → chunks
+- [x] **2.6.2** Add `deleteDocument(id:)` and `deleteChunk(id:)` methods to `IndexingViewModel`
+- [x] **2.6.3** Context menu "Delete Document" on document rows in DocumentsView flat list
+- [x] **2.6.4** Context menu "Delete Chunk" on chunk rows in DocumentsView detail
+- [x] **2.6.5** Confirmation alerts before deletion
+- [x] **2.6.6** Refresh document list / chunk tree after deletion; update AppState.indexedDocumentCount
 
 **Edge cases:**
-- Very long responses with many headers → layout performance
-- Malformed markdown → graceful fallback to plain text
+- Delete while indexing → disabled via `viewModel.isIndexing` guard
 
-#### 5.3 Configurable LLM parameters [P2]
+#### 4.7 Conversation management UX [P2] ✅
 
-Temperature and max tokens are hardcoded in BundledLLMService.
+No way to rename, delete, or manage conversations from the sidebar.
 
-- [ ] **5.3.1** Add `llmTemperature: Float` (default 0.7) and `llmMaxTokens: Int` (default 2048) to AppState
-- [ ] **5.3.2** Persist both to UserDefaults
-- [ ] **5.3.3** Pass through `LocalConfig` / `CloudConfig` to each LLM client
-- [ ] **5.3.4** Add controls in SettingsView under each provider section
+- [x] **4.7.1** Added `messageCount(conversationId:)` to `ConversationDatabaseService`
+- [x] **4.7.2** Added `messageCount` field to `Conversation` struct; populated in `refreshConversations()`
+- [x] **4.7.3** Message count displayed in sidebar row (e.g. "· 5 msgs")
+- [x] **4.7.4** Context menu on conversation rows: "Rename" and "Delete"
+- [x] **4.7.5** Swipe-to-delete on conversation rows
+- [x] **4.7.6** Delete confirmation alert; switches to "New Chat" if deleting active conversation
+- [x] **4.7.7** Rename alert with TextField; calls `updateConversation(id:title:updatedAt:)`
 
-#### 7.2 Distinguish pinned chunks visually [P2]
+**Edge cases:**
+- Rename to empty string → no-op (trimmed, guard !isEmpty)
+- Delete active conversation → clears messages and currentConversationId
 
-Pinned chunks look identical to retrieved chunks — no visual cue.
+#### 2.3 Chunk grid/list view overhaul [P1] ✅
 
-- [ ] **7.2.1** Add `isPinned: Bool` to `ScoredChunk`
-- [ ] **7.2.2** Set `isPinned = true` for chunks added via `addPinnedChunks`
-- [ ] **7.2.3** Show pin icon badge on `ChunkPreview` when `isPinned`
-- [ ] **7.2.4** Optionally use distinct background tint for pinned cards
+Chunk display is a plain list only. No view mode toggle, no grid cards, no filter bar.
+
+- [x] **2.3.1** Added `ChunkViewMode` enum (`.list`, `.grid`) with segmented picker in toolbar
+- [x] **2.3.2** Grid view: `LazyVGrid` with adaptive columns (min 260), cards showing status, title, content preview, char count
+- [x] **2.3.3** Filter bar: TextField for searching chunks by title/content with clear button
+- [x] **2.3.4** Persisted view mode in UserDefaults (`documents_chunk_view_mode`)
+- [x] **2.3.5** Grid cards use Liquid Glass design (glassEffect, GlassTokens, ChunkStatusBadge)
+- [x] **2.3.6** Empty filter state shows `ContentUnavailableView.search`

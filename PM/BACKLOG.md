@@ -21,15 +21,17 @@
 
 ---
 
-## Epic 2: Documents Library (partial)
+## Epic 2: Documents Library (partial — Sprint 8 complete)
 
 **Goal:** Robust document management — browsable, searchable, fully lifecycle-managed.
 
+*Tasks 2.3, 2.5.1, 2.6 shipped in Sprint 8. See `DONE.md` Sprint 8 for details.*
+
 | Task | Priority | Notes |
 |---|---|---|
-| 2.3 Chunk grid/list view overhaul | P1 | View mode toggle, grid cards, filter bar |
-| 2.5.1 Persist lastKnownModificationDates to DB | P2 | Currently lost on restart |
-| 2.6 Delete individual documents/chunks | P2 | Context menu, cascade delete |
+| ~~2.3 Chunk grid/list view overhaul~~ | ~~P1~~ | ✅ Done — View mode toggle, grid cards, filter bar |
+| ~~2.5.1 Persist lastKnownModificationDates to DB~~ | ~~P2~~ | ✅ Done — UserDefaults persistence with didSet |
+| ~~2.6 Delete individual documents/chunks~~ | ~~P2~~ | ✅ Done — Context menus, confirmation alerts, cascade delete |
 | 2.4.3 Per-folder aggregate status badge | P3 | Depends on 2.3 folder list |
 
 ---
@@ -52,28 +54,32 @@
 
 ---
 
-## Epic 4: Chat & RAG Pipeline (partial)
+## Epic 4: Chat & RAG Pipeline (partial — Sprint 8 complete)
 
 **Goal:** Reliable chat with correct RAG, context management, and resilient streaming.
+
+*Tasks 4.6–4.7 shipped in Sprint 8. See `DONE.md` Sprint 8 for details.*
 
 | Task | Priority | Notes |
 |---|---|---|
 | 4.2.3 Throttled streaming scroll | P2 | Per-token auto-scroll throttle |
 | 4.4.4 Auto-truncate context to budget | P2 | Chunk by relevance until contextSize |
-| 4.6 Persist pinned document IDs | P2 | UserDefaults, validate on load |
-| 4.7 Conversation management UX | P2 | Swipe-delete, title edit, count |
+| ~~4.6 Persist pinned document IDs~~ | ~~P2~~ | ✅ Done — AppState persistence, validation on load |
+| ~~4.7 Conversation management UX~~ | ~~P2~~ | ✅ Done — Swipe-delete, rename, message count |
 
 ---
 
-## Epic 5: Settings & Configuration
+## Epic 5: Settings & Configuration (partial — Sprint 7 complete)
 
 **Goal:** All configurable params exposed, validated, clearly connected to features.
 
+*Tasks 5.1–5.3 shipped in Sprint 7. See `DONE.md` Sprint 7 for details.*
+
 | Task | Priority | Notes |
 |---|---|---|
-| 5.1 Configurable search parameters (k, minScore) | P1 | Hardcoded today |
-| 5.2 API key validation ("Test" button) | P2 | Anthropic, OpenAI, Ollama |
-| 5.3 Configurable LLM parameters (temp, maxTokens) | P2 | Hardcoded in BundledLLMService |
+| ~~5.1 Configurable search parameters (k, minScore)~~ | ~~P1~~ | ✅ Done — Slider + TextField in Settings, clamped in ChatViewModel |
+| ~~5.2 API key validation ("Test" button)~~ | ~~P2~~ | ✅ Done — Test buttons for Anthropic, OpenAI, Ollama |
+| ~~5.3 Configurable LLM parameters (temp, maxTokens)~~ | ~~P2~~ | ✅ Done — Threaded through all 4 LLM clients |
 | 5.4 Database management in Settings | P3 | Size, count, clear, export |
 
 ---
@@ -93,14 +99,16 @@
 
 ---
 
-## Epic 7: Polish & UX
+## Epic 7: Polish & UX (partial — Sprint 7 complete)
 
 **Goal:** Quality-of-life improvements that make the app feel polished.
 
+*Tasks 7.1–7.2 shipped in Sprint 7. See `DONE.md` Sprint 7 for details.*
+
 | Task | Priority | Notes |
 |---|---|---|
-| 7.1 Markdown rendering for assistant responses | P2 | AttributedString or SwiftUI markdown |
-| 7.2 Distinguish pinned chunks visually | P2 | Pin icon, distinct card style |
+| ~~7.1 Markdown rendering for assistant responses~~ | ~~P2~~ | ✅ Done — MarkdownContentView with code block support |
+| ~~7.2 Distinguish pinned chunks visually~~ | ~~P2~~ | ✅ Done — Pin icon, orange tint, "Pinned" pill |
 | 7.5 Generation mode indicator (dot per provider) | P3 | Green = configured, gray = not |
 | 7.3 Collapsible chunks bar | P3 | Chevron toggle, compact summary |
 | 7.4 Pre-query document pinning | P3 | Always-visible pin button |
@@ -114,5 +122,5 @@
 |---|---|---|
 | ~~**Sprint 5**~~ | ~~Model Management~~ | ✅ Complete |
 | ~~**Sprint 6**~~ | ~~Error Handling~~ | ✅ Complete |
-| **Sprint 7** | Settings + Polish | 5.1, 5.2, 5.3, 7.1, 7.2 |
-| **Sprint 8** | Documents Polish | 2.3, 2.5.1, 2.6, 4.6, 4.7 |
+| ~~**Sprint 7**~~ | ~~Settings + Polish~~ | ✅ Complete |
+| ~~**Sprint 8**~~ | ~~Documents Polish~~ | ✅ Complete |

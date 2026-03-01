@@ -61,7 +61,12 @@ final class IndexingViewModel {
     /// IDs of chunks that have been embedded into the vector DB. Loaded from DB.
     var embeddedChunkIDs: Set<String> = []
     /// Modified chunk file URLs (for change detection). Key: file path, value: last known modification date.
-    var lastKnownModificationDates: [String: Date] = [:]
+    var lastKnownModificationDates: [String: Date] = [:] {
+        didSet {
+            if !isLoadingPersistedDates { persistModificationDates() }
+        }
+    }
+    private var isLoadingPersistedDates = false
     /// Whether modified chunk files have been detected (prompt user to re-embed).
     var hasModifiedChunkFiles = false
     /// User toggles for include/exclude. Nil = use default (embedded means included, else true).
@@ -91,7 +96,34 @@ final class IndexingViewModel {
     /// and reading chunking settings.
     var appState: AppState?
 
-    init() {}
+    private static let modDatesKey = "indexing_last_known_modification_dates"
+
+    init() {
+        loadPersistedModificationDates()
+    }
+
+    private func loadPersistedModificationDates() {
+        guard let dict = UserDefaults.standard.dictionary(forKey: Self.modDatesKey) as? [String: Double] else { return }
+        var dates: [String: Date] = [:]
+        for (path, interval) in dict {
+            dates[path] = Date(timeIntervalSinceReferenceDate: interval)
+        }
+        isLoadingPersistedDates = true
+        lastKnownModificationDates = dates
+        isLoadingPersistedDates = false
+    }
+
+    private func persistModificationDates() {
+        if lastKnownModificationDates.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.modDatesKey)
+        } else {
+            var dict: [String: Double] = [:]
+            for (path, date) in lastKnownModificationDates {
+                dict[path] = date.timeIntervalSinceReferenceDate
+            }
+            UserDefaults.standard.set(dict, forKey: Self.modDatesKey)
+        }
+    }
 
     /// Connects to the database if not already connected this session.
     /// Avoids repeated actor hops when the connection is already established.
@@ -521,6 +553,34 @@ final class IndexingViewModel {
             return try await database.listDocuments()
         } catch {
             return []
+        }
+    }
+
+    // MARK: - Delete Documents / Chunks
+
+    /// Deletes a single document and all its chunks from the database.
+    func deleteDocument(id: String) async {
+        guard !isIndexing else { return }
+        do {
+            try await ensureDatabaseConnected()
+            try await database.deleteDocument(id: id)
+            if let appState {
+                appState.indexedDocumentCount = (try? await database.documentCount()) ?? 0
+            }
+        } catch {
+            self.error = "Failed to delete document: \(error.localizedDescription)"
+        }
+    }
+
+    /// Deletes a single chunk from the database.
+    func deleteChunk(id: String) async {
+        guard !isIndexing else { return }
+        do {
+            try await ensureDatabaseConnected()
+            try await database.deleteChunk(id: id)
+            embeddedChunkIDs.remove(id)
+        } catch {
+            self.error = "Failed to delete chunk: \(error.localizedDescription)"
         }
     }
 

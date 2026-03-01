@@ -4,6 +4,9 @@ import AppKit
 struct MainView: View {
     @Environment(AppState.self) private var appState
     @State private var chatViewModel = ChatViewModel()
+    @State private var conversationToDelete: Conversation?
+    @State private var conversationToRename: Conversation?
+    @State private var renameText = ""
 
     /// True when both main DB and conversation DB are broken (greying out Chat + Documents).
     private var isFullyUnavailable: Bool {
@@ -35,9 +38,15 @@ struct MainView: View {
                                 Text(conv.title)
                                     .lineLimit(1)
                                     .foregroundStyle(.primary)
-                                Text(conv.updatedAt, style: .date)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                HStack(spacing: 4) {
+                                    Text(conv.updatedAt, style: .date)
+                                    if conv.messageCount > 0 {
+                                        Text("·")
+                                        Text("\(conv.messageCount) msg\(conv.messageCount == 1 ? "" : "s")")
+                                    }
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .tag(AppState.SidebarSelection.chat(conversationId: conv.id))
@@ -46,6 +55,26 @@ struct MainView: View {
                                     ? Color.accentColor.opacity(0.2)
                                     : nil
                             )
+                            .contextMenu {
+                                Button {
+                                    conversationToRename = conv
+                                    renameText = conv.title
+                                } label: {
+                                    Label("Rename", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    conversationToDelete = conv
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    conversationToDelete = conv
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     } header: {
                         Label("Chat", systemImage: "bubble.left.and.bubble.right")
@@ -73,13 +102,43 @@ struct MainView: View {
         .frame(minWidth: 800, minHeight: 600)
         .onAppear {
             chatViewModel.appState = appState
-            Task { await chatViewModel.refreshConversations() }
+            Task {
+                await chatViewModel.refreshConversations()
+                await chatViewModel.validatePinnedDocuments()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await chatViewModel.refreshConversations() }
         }
         .onChange(of: chatViewModel.currentConversationId) { _, newId in
             appState.selectedItem = .chat(conversationId: newId)
+        }
+        .alert("Delete Conversation?", isPresented: .init(
+            get: { conversationToDelete != nil },
+            set: { if !$0 { conversationToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let conv = conversationToDelete {
+                    Task { await chatViewModel.deleteConversation(id: conv.id) }
+                }
+            }
+            Button("Cancel", role: .cancel) { conversationToDelete = nil }
+        } message: {
+            Text("This will permanently delete \"\(conversationToDelete?.title ?? "")\" and all its messages.")
+        }
+        .alert("Rename Conversation", isPresented: .init(
+            get: { conversationToRename != nil },
+            set: { if !$0 { conversationToRename = nil } }
+        )) {
+            TextField("Title", text: $renameText)
+            Button("Rename") {
+                if let conv = conversationToRename {
+                    Task { await chatViewModel.renameConversation(id: conv.id, title: renameText) }
+                }
+            }
+            Button("Cancel", role: .cancel) { conversationToRename = nil }
+        } message: {
+            Text("Enter a new title for this conversation.")
         }
     }
 
