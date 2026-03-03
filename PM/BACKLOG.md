@@ -144,6 +144,47 @@
 
 ---
 
+## Epic 10: Embedding Model Upgrade
+
+**Goal:** Switch to bge-large-en-v1.5 (1024 dims), auto-derive chunk size from model token window.
+
+| Task | Priority | Notes |
+|---|---|---|
+| ~~10.1 Upgrade EmbeddingService to bge-large~~ | ~~P0~~ | ✅ Done — Model config, dimension 1024, display name, size ~1.3 GB |
+| ~~10.2 Update DatabaseService schema (768→1024)~~ | ~~P0~~ | ✅ Done — Schema v10 migration drops/recreates vec_chunks, clears embedded_chunk_refs |
+| ~~10.3 Add maxTokenWindow to EmbeddingService~~ | ~~P1~~ | ✅ Done — `static let maxTokenWindow: Int = 512` |
+| ~~10.4 Update AppState chunk size defaults~~ | ~~P1~~ | ✅ Done — Default chunkSizeTokens = 512, fallback uses maxTokenWindow |
+| ~~10.5 Model-aware chunk size in SettingsView~~ | ~~P2~~ | ✅ Done — Shows model token limit, orange warning when exceeded |
+
+---
+
+## Epic 11: Chunk File Naming Fix
+
+**Goal:** Chunk files should be `report.md`, not `report.pdf.md`.
+
+| Task | Priority | Notes |
+|---|---|---|
+| ~~11.1 Fix chunkFileURL extension stripping~~ | ~~P0~~ | ✅ Done — `deletingPathExtension` before `appendingPathExtension("md")` |
+| ~~11.2 Update inferSourcePath for new naming~~ | ~~P1~~ | ✅ Done — Updated doc comments, extensionless inferred paths accepted |
+
+---
+
+## Epic 12: Document Parsing & Chunking ✅ (Sprint 13 complete)
+
+**Goal:** Preserve table structure in chunks, split on heading boundaries.
+
+*All tasks shipped in Sprint 13. See `DONE.md` Sprint 13 for details.*
+
+| Task | Priority | Notes |
+|---|---|---|
+| ~~12.1 DOCX table extraction via HTML~~ | ~~P1~~ | ✅ Done — `textutil -convert html`, parse `<table>` → markdown tables |
+| ~~12.2 PDF heuristic table detection~~ | ~~P2~~ | ✅ Done — Detect tab-separated / aligned columns → markdown tables |
+| ~~12.3 Plain text table detection~~ | ~~P3~~ | ✅ Done — Reuse 12.2 heuristic in processPlainText |
+| ~~12.4 Section-aware chunking~~ | ~~P1~~ | ✅ Done — Split on `# / ## / ###` headings, fallback to paragraph split |
+| ~~12.5 Hierarchical chunk titles~~ | ~~P2~~ | ✅ Done — Titles like `"report > Architecture > Overview"` from heading path |
+
+---
+
 ## Recommended Sprint Order
 
 | Sprint | Focus | Key Tasks |
@@ -154,3 +195,6 @@
 | ~~**Sprint 8**~~ | ~~Documents Polish~~ | ✅ Complete |
 | ~~**Sprint 9**~~ | ~~Chat UX + Cleanup~~ | ✅ Complete |
 | ~~**Sprint 10**~~ | ~~Final Polish~~ | ✅ Complete |
+| ~~**Sprint 11**~~ | ~~Release Prep~~ | ✅ Complete |
+| ~~**Sprint 12**~~ | ~~Model Upgrade + File Naming~~ | ✅ Complete |
+| ~~**Sprint 13**~~ | ~~Table Parsing + Section Chunking~~ | ✅ Complete |

@@ -55,7 +55,7 @@ enum StreamingErrorKind: Equatable {
 /// 6. Stream response from selected LLM (cloud, Ollama, or bundled Llama)
 ///
 /// Model download rules:
-/// - Embedding model (bge-base-en-v1.5): downloaded ONLY during document indexing, never here.
+/// - Embedding model (bge-large-en-v1.5): downloaded ONLY during document indexing, never here.
 /// - Llama 3.2: downloaded ONLY when user explicitly accepts the offer (no cloud API key).
 @Observable
 @MainActor

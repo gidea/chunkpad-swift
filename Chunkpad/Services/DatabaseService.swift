@@ -27,7 +27,7 @@ enum DatabaseError: LocalizedError, Sendable {
 actor DatabaseService {
 
     /// Current schema version. Bump when adding migrations.
-    static let currentSchemaVersion = 9
+    static let currentSchemaVersion = 10
 
     // nonisolated(unsafe) because deinit needs access and OpaquePointer is not Sendable.
     // Thread safety is guaranteed by the actor isolation — deinit only runs after
@@ -160,7 +160,7 @@ actor DatabaseService {
         try execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
                 chunk_id TEXT PRIMARY KEY,
-                embedding float[768] distance_metric=cosine,
+                embedding float[1024] distance_metric=cosine,
                 document_type TEXT,
                 +title TEXT,
                 +source_path TEXT
@@ -267,6 +267,22 @@ actor DatabaseService {
                 try execute("CREATE INDEX IF NOT EXISTS idx_chunks_source_path ON chunks(source_path)")
                 try execute("CREATE INDEX IF NOT EXISTS idx_embedded_chunk_refs_chunk_ref_id ON embedded_chunk_refs(chunk_ref_id)")
                 try execute("CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)")
+            case 10:
+                // Upgrade embedding dimension from 768 (bge-base) to 1024 (bge-large).
+                // vec0 tables cannot ALTER columns, so drop and recreate.
+                // All existing embeddings are invalidated; chunk text on disk is preserved.
+                try execute("DROP TABLE IF EXISTS vec_chunks")
+                try execute("""
+                    CREATE VIRTUAL TABLE vec_chunks USING vec0(
+                        chunk_id TEXT PRIMARY KEY,
+                        embedding float[1024] distance_metric=cosine,
+                        document_type TEXT,
+                        +title TEXT,
+                        +source_path TEXT
+                    )
+                """)
+                // Clear embedded_chunk_refs since all embeddings are now invalid
+                try execute("DELETE FROM embedded_chunk_refs")
             default:
                 break
             }
@@ -658,7 +674,7 @@ actor DatabaseService {
     /// users toggle individual chunks on/off before sending context to the LLM.
     ///
     /// - Parameters:
-    ///   - queryEmbedding: The 768-dim BGE query embedding.
+    ///   - queryEmbedding: The 1024-dim BGE query embedding.
     ///   - queryText: The raw user query for FTS5.
     ///   - k: Maximum number of results to return.
     ///   - minScore: Minimum combined score (0–1). Chunks below this are discarded

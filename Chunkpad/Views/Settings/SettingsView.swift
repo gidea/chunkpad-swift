@@ -270,15 +270,34 @@ struct SettingsView: View {
     @ViewBuilder
     private func documentIndexingSection(appState: Bindable<AppState>) -> some View {
         Section("Document Indexing") {
+            LabeledContent("Embedding model") {
+                Text("\(EmbeddingService.modelDisplayName) (\(EmbeddingService.embeddingDimension)d)")
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Model token limit") {
+                Text("\(EmbeddingService.maxTokenWindow) tokens")
+                    .foregroundStyle(.secondary)
+            }
+
             LabeledContent("Chunk size (tokens)") {
                 TextField(
-                    "1000",
+                    "\(EmbeddingService.maxTokenWindow)",
                     value: appState.chunkSizeTokens,
                     format: .number
                 )
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 80)
                 .multilineTextAlignment(.trailing)
+            }
+
+            if appState.wrappedValue.chunkSizeTokens > EmbeddingService.maxTokenWindow {
+                Label(
+                    "Chunk size exceeds the embedding model's \(EmbeddingService.maxTokenWindow)-token window. Text beyond this limit will be truncated, losing information.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
 
             LabeledContent("Overlap (tokens)") {
@@ -297,7 +316,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Approximate; uses ~4 characters per token. Supported formats: TXT, RTF, DOC, DOCX, ODT, PDF.")
+            Text("Recommended: stay at or below the embedding model's token limit (\(EmbeddingService.maxTokenWindow) tokens). Supported formats: TXT, RTF, DOC, DOCX, ODT, PDF.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

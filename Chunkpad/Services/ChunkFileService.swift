@@ -18,7 +18,8 @@ struct ChunkFileService {
     }
 
     /// Returns the chunk file URL for a source file given the root folder.
-    /// Example: root=MyDocs, source=MyDocs/report.pdf → MyDocs_chunks/report.pdf.md
+    /// Strips the original file extension before appending `.md`.
+    /// Example: root=MyDocs, source=MyDocs/report.pdf → MyDocs/_chunks/report.md
     func chunkFileURL(for sourceURL: URL, rootFolderURL: URL) -> URL {
         let root = rootFolderURL.standardized
         let source = sourceURL.standardized
@@ -26,12 +27,16 @@ struct ChunkFileService {
         let sourcePath = source.path
 
         guard sourcePath.hasPrefix(rootPath) else {
-            return chunksRootURL(for: rootFolderURL).appendingPathComponent(source.lastPathComponent).appendingPathExtension("md")
+            let stripped = (source.lastPathComponent as NSString).deletingPathExtension
+            return chunksRootURL(for: rootFolderURL)
+                .appendingPathComponent(stripped)
+                .appendingPathExtension("md")
         }
 
         let relativePath = String(sourcePath.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let chunksRoot = chunksRootURL(for: rootFolderURL)
-        let chunkFilePath = (relativePath as NSString).appendingPathExtension("md") ?? "\(relativePath).md"
+        let strippedPath = (relativePath as NSString).deletingPathExtension
+        let chunkFilePath = (strippedPath as NSString).appendingPathExtension("md") ?? "\(strippedPath).md"
         return chunksRoot.appendingPathComponent(chunkFilePath)
     }
 
@@ -168,7 +173,9 @@ struct ChunkFileService {
     }
 
     /// Infer source document path from chunk file path.
-    /// report.pdf.md in MyDocs/_chunks/subdir/ → original source: MyDocs/subdir/report.pdf
+    /// Since chunk files strip the original extension (report.pdf → report.md),
+    /// the inferred source path will be extensionless (e.g., MyDocs/subdir/report).
+    /// This is acceptable as the source path is primarily used for display and grouping.
     private func inferSourcePath(from chunkFileURL: URL, chunksRoot: URL) -> String {
         inferSourcePath(from: chunkFileURL, chunksRootPath: chunksRoot.path)
     }
