@@ -35,8 +35,9 @@ final class AppState {
 
     // MARK: - Document Indexing (Chunking Strategy)
 
-    /// Target chunk size in tokens. Uses ~4 characters per token approximation.
-    var chunkSizeTokens: Int = 1000
+    /// Target chunk size in tokens. Defaults to the embedding model's max token window.
+    /// Uses ~4 characters per token approximation.
+    var chunkSizeTokens: Int = 512
     /// Overlap between consecutive chunks in tokens (~10% of chunk size).
     var chunkOverlapTokens: Int = 100
 
@@ -127,7 +128,7 @@ final class AppState {
         ollamaEndpoint = Self.defaults.string(forKey: ProfileKey.ollamaEndpoint) ?? "http://localhost:11434"
         ollamaModel = Self.defaults.string(forKey: ProfileKey.ollamaModel) ?? "llama3.3"
         contextSize = Self.defaults.object(forKey: ProfileKey.contextSize) as? Int ?? 4096
-        chunkSizeTokens = Self.defaults.object(forKey: ProfileKey.chunkSizeTokens) as? Int ?? 1000
+        chunkSizeTokens = Self.defaults.object(forKey: ProfileKey.chunkSizeTokens) as? Int ?? EmbeddingService.maxTokenWindow
         chunkOverlapTokens = Self.defaults.object(forKey: ProfileKey.chunkOverlapTokens) as? Int ?? 100
         searchResultCount = Self.defaults.object(forKey: ProfileKey.searchResultCount) as? Int ?? 10
         searchMinScore = Self.defaults.object(forKey: ProfileKey.searchMinScore) as? Double ?? 0.1

@@ -18,7 +18,7 @@ struct ProcessingResult: Identifiable {
 /// without downloading the embedding model or writing to the database — useful for
 /// verifying extraction and chunking before re-enabling full indexing.
 ///
-/// The embedding model (bge-base-en-v1.5, ~438 MB) is NOT bundled with the app.
+/// The embedding model (bge-large-en-v1.5, ~1.3 GB) is NOT bundled with the app.
 /// It's downloaded automatically only when the user first triggers indexing.
 @Observable
 @MainActor

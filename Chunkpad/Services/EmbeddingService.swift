@@ -33,12 +33,13 @@ enum EmbeddingModelStatus: Sendable, Equatable {
 
 /// Generates vector embeddings locally on Apple Silicon using MLX.
 ///
-/// Uses BAAI/bge-base-en-v1.5 — a high-quality BERT-based embedding model
+/// Uses BAAI/bge-large-en-v1.5 — a high-quality BERT-based embedding model
 /// optimized for retrieval-augmented generation (RAG). Key properties:
-/// - 768-dimensional embeddings
+/// - 1024-dimensional embeddings
 /// - CLS pooling (configured from model's 1_Pooling/config.json)
-/// - ~438 MB download (model weights in safetensors format)
+/// - ~1.3 GB download (model weights in safetensors format)
 /// - Cosine similarity for distance metric
+/// - 512-token maximum input window (BERT positional embedding limit)
 ///
 /// The model is NOT bundled with the app. It is downloaded from HuggingFace
 /// ONLY when the user triggers document indexing (selects files to chunk and embed).
@@ -53,18 +54,22 @@ actor EmbeddingService {
     // MARK: - Configuration
 
     /// The model configuration — pre-registered in MLXEmbedders.
-    static let modelConfiguration = ModelConfiguration.bge_base
+    static let modelConfiguration = ModelConfiguration.bge_large
 
-    /// The dimensionality of output embeddings (768 for bge-base-en-v1.5).
-    static let embeddingDimension: Int = 768
+    /// The dimensionality of output embeddings (1024 for bge-large-en-v1.5).
+    static let embeddingDimension: Int = 1024
+
+    /// Maximum token window for the embedding model. Inputs beyond this are truncated by the tokenizer.
+    /// For bge-large-en-v1.5, the BERT architecture supports up to 512 tokens (max_position_embeddings).
+    static let maxTokenWindow: Int = 512
 
     /// BGE query instruction prefix for retrieval tasks.
     static let queryInstruction = "Represent this sentence for searching relevant passages: "
 
     /// Model name for display in UI.
-    static let modelDisplayName = "bge-base-en-v1.5"
-    static let modelID = "BAAI/bge-base-en-v1.5"
-    static let modelSize = "~438 MB"
+    static let modelDisplayName = "bge-large-en-v1.5"
+    static let modelID = "BAAI/bge-large-en-v1.5"
+    static let modelSize = "~1.3 GB"
 
     /// Where the embedding model is cached on disk after download.
     /// MLXEmbedders stores downloaded models here via its internal hub library.

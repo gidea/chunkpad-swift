@@ -5,7 +5,7 @@ import MLXLMCommon
 // MARK: - Bundled LLM Status
 
 /// Tracks the lifecycle of the bundled Llama model for local text generation.
-/// Completely separate from the embedding model (bge-base-en-v1.5).
+/// Completely separate from the embedding model (bge-large-en-v1.5).
 ///
 /// - The embedding model creates vector embeddings for search (MLXEmbedders).
 /// - This model generates text responses from retrieved context (MLXLLM).
