@@ -144,9 +144,11 @@
 
 ---
 
-## Epic 10: Embedding Model Upgrade
+## Epic 10: Embedding Model Upgrade ✅ (Sprint 12 complete)
 
 **Goal:** Switch to bge-large-en-v1.5 (1024 dims), auto-derive chunk size from model token window.
+
+*All tasks shipped in Sprint 12. See `DONE.md` Sprint 12 for details.*
 
 | Task | Priority | Notes |
 |---|---|---|
@@ -158,9 +160,11 @@
 
 ---
 
-## Epic 11: Chunk File Naming Fix
+## Epic 11: Chunk File Naming Fix ✅ (Sprint 12 complete)
 
 **Goal:** Chunk files should be `report.md`, not `report.pdf.md`.
+
+*All tasks shipped in Sprint 12. See `DONE.md` Sprint 12 for details.*
 
 | Task | Priority | Notes |
 |---|---|---|
