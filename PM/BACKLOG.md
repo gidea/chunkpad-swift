@@ -21,184 +21,24 @@
 
 ---
 
-## Epic 2: Documents Library ✅ (Sprint 11 complete)
+## Completed Epics
 
-**Goal:** Robust document management — browsable, searchable, fully lifecycle-managed.
+All epics through Epic 12 (Sprints 1–13) are complete. See `DONE.md` for full history.
 
-*Tasks 2.3, 2.5.1, 2.6 shipped in Sprint 8. Task 2.4.3 shipped in Sprint 11. See `DONE.md` for details.*
-
-| Task | Priority | Notes |
+| Epic | Focus | Sprints |
 |---|---|---|
-| ~~2.3 Chunk grid/list view overhaul~~ | ~~P1~~ | ✅ Done — View mode toggle, grid cards, filter bar |
-| ~~2.5.1 Persist lastKnownModificationDates to DB~~ | ~~P2~~ | ✅ Done — UserDefaults persistence with didSet |
-| ~~2.6 Delete individual documents/chunks~~ | ~~P2~~ | ✅ Done — Context menus, confirmation alerts, cascade delete |
-| ~~2.4.3 Per-folder aggregate status badge~~ | ~~P3~~ | ✅ Done — Recursive folder status with colored dot in sidebar |
+| Epic 2 | Documents Library | Sprints 2, 8, 11 |
+| Epic 3 | Model Download Management | Sprint 5 |
+| Epic 4 | Chat & RAG Pipeline | Sprints 4, 8, 9 |
+| Epic 5 | Settings & Configuration | Sprints 7, 10 |
+| Epic 6 | Error Handling & Resilience | Sprint 6 |
+| Epic 7 | Polish & UX | Sprints 7, 9, 10 |
+| Epic 8 | Code Quality & Cleanup | Sprint 9 |
+| Epic 9 | UX Robustness & Feedback | Sprint 10 |
+| Epic 10 | Embedding Model Upgrade | Sprint 12 |
+| Epic 11 | Chunk File Naming Fix | Sprint 12 |
+| Epic 12 | Document Parsing & Chunking | Sprint 13 |
 
 ---
 
-## Epic 3: Model Download Management ✅ (Sprint 5 complete)
-
-**Goal:** Transparent, resilient, cancellable model downloads with cache management.
-
-*All Sprint 5 tasks shipped. See `DONE.md` Sprint 5 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~3.1.6 Guard in BundledLLMService.downloadAndLoad~~ | ~~P1~~ | ✅ Done |
-| ~~3.2 Download cancellation~~ | ~~P1~~ | ✅ Done — cancelDownload(), Cancel button in Settings |
-| ~~3.3 Download retry logic~~ | ~~P1~~ | ✅ Done — 3× backoff, .retrying status |
-| ~~3.5 Cache management UI~~ | ~~P1~~ | ✅ Done — size display, Clear Cache buttons |
-| ~~3.6 Cache integrity verification~~ | ~~P2~~ | ✅ Done — on-launch check, Verify Cache button |
-| ~~3.4 Disk space validation~~ | ~~P2~~ | ✅ Done — pre-check before download |
-| ~~3.7.1–3.7.2 Callback cleanup~~ | ~~P2~~ | ✅ Done — clearStatusCallback() on both services |
-
----
-
-## Epic 4: Chat & RAG Pipeline ✅ (Sprint 9 complete)
-
-**Goal:** Reliable chat with correct RAG, context management, and resilient streaming.
-
-*Tasks 4.6–4.7 shipped in Sprint 8. Tasks 4.2.3, 4.4.4 shipped in Sprint 9. See `DONE.md` for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~4.2.3 Throttled streaming scroll~~ | ~~P1~~ | ✅ Done — Timer.publish(every: 0.3) + onReceive auto-scroll |
-| ~~4.4.4 Auto-truncate context to budget~~ | ~~P2~~ | ✅ Done — estimateTokens, drop lowest-relevance non-pinned chunks |
-| ~~4.6 Persist pinned document IDs~~ | ~~P2~~ | ✅ Done — AppState persistence, validation on load |
-| ~~4.7 Conversation management UX~~ | ~~P2~~ | ✅ Done — Swipe-delete, rename, message count |
-
----
-
-## Epic 5: Settings & Configuration ✅ (Sprint 10 complete)
-
-**Goal:** All configurable params exposed, validated, clearly connected to features.
-
-*Tasks 5.1–5.3 shipped in Sprint 7. Task 5.4 shipped in Sprint 10. See `DONE.md` for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~5.1 Configurable search parameters (k, minScore)~~ | ~~P1~~ | ✅ Done — Slider + TextField in Settings, clamped in ChatViewModel |
-| ~~5.2 API key validation ("Test" button)~~ | ~~P2~~ | ✅ Done — Test buttons for Anthropic, OpenAI, Ollama |
-| ~~5.3 Configurable LLM parameters (temp, maxTokens)~~ | ~~P2~~ | ✅ Done — Threaded through all 4 LLM clients |
-| ~~5.4 Database management in Settings~~ | ~~P3~~ | ✅ Done — Size, chunk count, clear action with confirmation |
-
----
-
-## Epic 6: Error Handling & Resilience ✅ (Sprint 6 complete)
-
-**Goal:** Every error visible to user with a clear recovery path. No silent failures.
-
-*All Sprint 6 tasks shipped. See `DONE.md` Sprint 6 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~6.1 App initialization error handling~~ | ~~P0~~ | ✅ Done — AppState.initError, MainView banner + Retry |
-| ~~6.2 Embedding model error recovery~~ | ~~P1~~ | ✅ Done — Clear Cache & Retry button in DocumentsView |
-| ~~6.3.4 Retry individual parse-failed files~~ | ~~P2~~ | ✅ Done — skippedFiles list with per-file Retry buttons |
-| ~~6.4 Network error handling for LLM streaming~~ | ~~P2~~ | ✅ Done — connectionLost/rateLimited classification + Retry |
-
----
-
-## Epic 7: Polish & UX ✅ (Sprint 10 complete)
-
-**Goal:** Quality-of-life improvements that make the app feel polished.
-
-*Tasks 7.1–7.2 shipped in Sprint 7. Tasks 7.4, 7.6 shipped in Sprint 9. Tasks 7.3, 7.5 shipped in Sprint 10. See `DONE.md` for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~7.1 Markdown rendering for assistant responses~~ | ~~P2~~ | ✅ Done — MarkdownContentView with code block support |
-| ~~7.2 Distinguish pinned chunks visually~~ | ~~P2~~ | ✅ Done — Pin icon, orange tint, "Pinned" pill |
-| ~~7.4 Pre-query document pinning~~ | ~~P2~~ | ✅ Done — Always-visible pin button in inputBar with badge |
-| ~~7.6 Update README.md project structure~~ | ~~P2~~ | ✅ Done — 7 missing files added to structure diagram |
-| ~~7.3 Collapsible chunks bar~~ | ~~P3~~ | ✅ Done — Chevron toggle, compact summary with token estimate |
-| ~~7.5 Generation mode indicator~~ | ~~P3~~ | ✅ Done — Green/gray dot per provider in toolbar picker |
-
----
-
-## Epic 8: Code Quality & Cleanup ✅ (Sprint 9 complete)
-
-**Goal:** Eliminate tech debt, remove dead code, fix compiler warnings.
-
-*All tasks shipped in Sprint 9. See `DONE.md` Sprint 9 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~8.1 Extract shared generation task code~~ | ~~P1~~ | ✅ Done — runGeneration() shared method |
-| ~~8.2 Fix compiler warnings in ChatView~~ | ~~P1~~ | ✅ Done — Replaced unused let bindings with != nil |
-| ~~8.3 Remove dead indexFolder code path~~ | ~~P2~~ | ✅ Done — ~100 lines removed from IndexingViewModel |
-
----
-
-## Epic 9: UX Robustness & Feedback ✅ (Sprint 10 complete)
-
-**Goal:** Surface hidden state to users, fix edge-case UX gaps, improve feedback loops.
-
-*All tasks shipped in Sprint 10. See `DONE.md` Sprint 10 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~9.1 Surface droppedChunkCount in regenerate bar~~ | ~~P2~~ | ✅ Done — Orange "N trimmed to fit budget" in regenerate bar |
-| ~~9.2 Validate pinned docs after delete~~ | ~~P2~~ | ✅ Done — NotificationCenter post + MainView listener |
-| ~~9.3 Auto-clear chunk filter on file switch~~ | ~~P3~~ | ✅ Done — onChange(of: selectedNodeID) clears filter |
-
----
-
-## Epic 10: Embedding Model Upgrade ✅ (Sprint 12 complete)
-
-**Goal:** Switch to bge-large-en-v1.5 (1024 dims), auto-derive chunk size from model token window.
-
-*All tasks shipped in Sprint 12. See `DONE.md` Sprint 12 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~10.1 Upgrade EmbeddingService to bge-large~~ | ~~P0~~ | ✅ Done — Model config, dimension 1024, display name, size ~1.3 GB |
-| ~~10.2 Update DatabaseService schema (768→1024)~~ | ~~P0~~ | ✅ Done — Schema v10 migration drops/recreates vec_chunks, clears embedded_chunk_refs |
-| ~~10.3 Add maxTokenWindow to EmbeddingService~~ | ~~P1~~ | ✅ Done — `static let maxTokenWindow: Int = 512` |
-| ~~10.4 Update AppState chunk size defaults~~ | ~~P1~~ | ✅ Done — Default chunkSizeTokens = 512, fallback uses maxTokenWindow |
-| ~~10.5 Model-aware chunk size in SettingsView~~ | ~~P2~~ | ✅ Done — Shows model token limit, orange warning when exceeded |
-
----
-
-## Epic 11: Chunk File Naming Fix ✅ (Sprint 12 complete)
-
-**Goal:** Chunk files should be `report.md`, not `report.pdf.md`.
-
-*All tasks shipped in Sprint 12. See `DONE.md` Sprint 12 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~11.1 Fix chunkFileURL extension stripping~~ | ~~P0~~ | ✅ Done — `deletingPathExtension` before `appendingPathExtension("md")` |
-| ~~11.2 Update inferSourcePath for new naming~~ | ~~P1~~ | ✅ Done — Updated doc comments, extensionless inferred paths accepted |
-
----
-
-## Epic 12: Document Parsing & Chunking ✅ (Sprint 13 complete)
-
-**Goal:** Preserve table structure in chunks, split on heading boundaries.
-
-*All tasks shipped in Sprint 13. See `DONE.md` Sprint 13 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~12.1 DOCX table extraction via HTML~~ | ~~P1~~ | ✅ Done — `textutil -convert html`, parse `<table>` → markdown tables |
-| ~~12.2 PDF heuristic table detection~~ | ~~P2~~ | ✅ Done — Detect tab-separated / aligned columns → markdown tables |
-| ~~12.3 Plain text table detection~~ | ~~P3~~ | ✅ Done — Reuse 12.2 heuristic in processPlainText |
-| ~~12.4 Section-aware chunking~~ | ~~P1~~ | ✅ Done — Split on `# / ## / ###` headings, fallback to paragraph split |
-| ~~12.5 Hierarchical chunk titles~~ | ~~P2~~ | ✅ Done — Titles like `"report > Architecture > Overview"` from heading path |
-
----
-
-## Recommended Sprint Order
-
-| Sprint | Focus | Key Tasks |
-|---|---|---|
-| ~~**Sprint 5**~~ | ~~Model Management~~ | ✅ Complete |
-| ~~**Sprint 6**~~ | ~~Error Handling~~ | ✅ Complete |
-| ~~**Sprint 7**~~ | ~~Settings + Polish~~ | ✅ Complete |
-| ~~**Sprint 8**~~ | ~~Documents Polish~~ | ✅ Complete |
-| ~~**Sprint 9**~~ | ~~Chat UX + Cleanup~~ | ✅ Complete |
-| ~~**Sprint 10**~~ | ~~Final Polish~~ | ✅ Complete |
-| ~~**Sprint 11**~~ | ~~Release Prep~~ | ✅ Complete |
-| ~~**Sprint 12**~~ | ~~Model Upgrade + File Naming~~ | ✅ Complete |
-| ~~**Sprint 13**~~ | ~~Table Parsing + Section Chunking~~ | ✅ Complete |
+*No pending epics. Add new epics below as they are identified.*
