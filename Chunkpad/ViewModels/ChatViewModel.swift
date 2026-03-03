@@ -48,7 +48,7 @@ enum StreamingErrorKind: Equatable {
 /// 3. Embed user query locally via MLX (with BGE query instruction prefix)
 /// 4. Hybrid search (sqlite-vec KNN + FTS5)
 /// 5. Build context from retrieved chunks
-/// 6. Stream response from selected LLM (cloud, Ollama, or bundled Llama)
+/// 6. Stream response from selected LLM (cloud or bundled Llama)
 ///
 /// Model download rules:
 /// - Embedding model (bge-base-en-v1.5): downloaded ONLY during document indexing, never here.
@@ -239,7 +239,7 @@ final class ChatViewModel {
             // 6. Build context messages for the LLM (only included chunks)
             let contextMessages = buildContext(scoredChunks: scoredChunks, query: text)
 
-            // 7. Stream response from selected LLM (cloud, Ollama, or bundled Llama)
+            // 7. Stream response from selected LLM (cloud or bundled Llama)
             let client = LLMServiceFactory.client(for: provider)
             let includedChunks = scoredChunks.filter(\.isIncluded)
             let assistantMessage = Message(

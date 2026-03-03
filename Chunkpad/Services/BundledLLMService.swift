@@ -37,7 +37,7 @@ enum BundledLLMStatus: Sendable, Equatable {
 /// Manages the lifecycle of the bundled Llama 3.2 model for local text generation.
 ///
 /// This is a LOCAL GENERATIVE LLM — it answers questions from retrieved context,
-/// just like Claude, ChatGPT, or Ollama. It is NOT an embedding model.
+/// just like Claude or ChatGPT. It is NOT an embedding model.
 ///
 /// The model is NOT included in the app bundle. It is downloaded from HuggingFace
 /// only when the user explicitly accepts the download offer (triggered when they

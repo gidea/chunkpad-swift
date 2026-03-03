@@ -31,13 +31,8 @@ enum LLMServiceFactory {
             case .openai:
                 return OpenAIClient(apiKey: config.apiKey, model: config.model)
             }
-        case .local(let config):
-            switch config.provider {
-            case .ollama:
-                return OllamaClient(endpoint: config.endpoint, model: config.modelName)
-            case .bundled:
-                return BundledLLMClient(service: BundledLLMService.shared)
-            }
+        case .local:
+            return BundledLLMClient(service: BundledLLMService.shared)
         }
     }
 }

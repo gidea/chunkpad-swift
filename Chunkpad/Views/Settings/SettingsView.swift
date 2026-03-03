@@ -22,8 +22,6 @@ struct SettingsView: View {
         .onChange(of: appState.openaiModel) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.anthropicAPIKey) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.openaiAPIKey) { _, _ in appState.saveToUserProfile() }
-        .onChange(of: appState.ollamaEndpoint) { _, _ in appState.saveToUserProfile() }
-        .onChange(of: appState.ollamaModel) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.contextSize) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkSizeTokens) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkOverlapTokens) { _, _ in appState.saveToUserProfile() }
@@ -277,13 +275,20 @@ struct SettingsView: View {
             }
         }
 
-        // Ollama-specific settings (only shown when Ollama is selected)
-        if appState.wrappedValue.generationMode == .ollama {
-            Section("Ollama Configuration") {
-                TextField("Endpoint", text: appState.ollamaEndpoint)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Model", text: appState.ollamaModel, prompt: Text("llama3.3"))
-                    .textFieldStyle(.roundedBorder)
+        // Bundled Llama status (only shown when Llama is selected)
+        if appState.wrappedValue.generationMode == .bundled {
+            Section("Llama Status") {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(llamaStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text(appState.wrappedValue.bundledLLMStatus.displayText)
+                }
+                if !appState.wrappedValue.bundledLLMStatus.isReady {
+                    Text("Download Llama from the Llama (Local) section above to enable on-device generation.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
