@@ -57,19 +57,25 @@ chunkpad-swift/
 │   │   └── AppState.swift             # Global observable state
 │   ├── Models/
 │   │   ├── Chunk.swift                # Document chunk model
-│   │   ├── ScoredChunk.swift          # Chunk + relevance score + include toggle
+│   │   ├── ChunkFileTree.swift        # Chunk embedding status + file tree for review
 │   │   ├── IndexedDocument.swift      # Indexed document metadata
+│   │   ├── IndexedFolder.swift        # Indexed folder & chunk file info
 │   │   ├── LLMProvider.swift          # LLM provider enums & configs
-│   │   └── Message.swift              # Chat message model
+│   │   ├── Message.swift              # Chat message model
+│   │   └── ScoredChunk.swift          # Chunk + relevance score + include toggle
 │   ├── Services/
-│   │   ├── EmbeddingService.swift     # MLX embedding (bge-base-en-v1.5)
+│   │   ├── AnthropicClient.swift      # Anthropic Claude API client
+│   │   ├── BookmarkService.swift      # Security-scoped bookmark persistence
 │   │   ├── BundledLLMService.swift    # Llama 3.2 local generation via MLXLLM
+│   │   ├── ChunkFileService.swift     # Chunk markdown file I/O
+│   │   ├── ConversationDatabaseService.swift # Chat conversation SQLite DB
 │   │   ├── DatabaseService.swift      # SQLite + sqlite-vec + FTS5
 │   │   ├── DocumentProcessor.swift    # PDF/DOCX/TXT/MD/PPTX parsing & chunking
+│   │   ├── EmbeddingService.swift     # MLX embedding (bge-base-en-v1.5)
+│   │   ├── KeychainHelper.swift       # Keychain storage for API keys
 │   │   ├── LLMService.swift           # LLM client protocol & factory
-│   │   ├── AnthropicClient.swift      # Anthropic Claude API client
-│   │   ├── OpenAIClient.swift         # OpenAI API client
-│   │   └── OllamaClient.swift         # Ollama local LLM client
+│   │   ├── OllamaClient.swift         # Ollama local LLM client
+│   │   └── OpenAIClient.swift         # OpenAI API client
 │   ├── ViewModels/
 │   │   ├── ChatViewModel.swift        # RAG pipeline orchestration
 │   │   └── IndexingViewModel.swift    # Document indexing orchestration
@@ -86,10 +92,11 @@ chunkpad-swift/
 │   │   ├── Settings/
 │   │   │   └── SettingsView.swift     # LLM config, DB status, model info
 │   │   └── Components/
-│   │       ├── GlassTokens.swift      # Centralized design tokens (radii, spacing, padding)
+│   │       ├── ChunkStatusBadge.swift # Embedding status indicator (colored icon + label)
 │   │       ├── GlassCard.swift        # Reusable Liquid Glass card
 │   │       ├── GlassIconButton.swift  # Circular glass icon button
-│   │       └── GlassPill.swift        # Capsule-shaped glass tag/label
+│   │       ├── GlassPill.swift        # Capsule-shaped glass tag/label
+│   │       └── GlassTokens.swift      # Centralized design tokens (radii, spacing, padding)
 │   └── Resources/
 │       ├── Info.plist
 │       ├── Chunkpad.entitlements
