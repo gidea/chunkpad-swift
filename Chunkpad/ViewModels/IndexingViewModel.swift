@@ -392,6 +392,32 @@ final class IndexingViewModel {
         return result
     }
 
+    /// 2.4.3: Computes aggregate embedding status for all files inside a folder (recursively).
+    func folderAggregateStatus(for folder: ChunkFolderNode) -> FileEmbeddingStatus {
+        var fileStatuses: [FileEmbeddingStatus] = []
+        collectFileStatuses(from: folder, into: &fileStatuses)
+        guard !fileStatuses.isEmpty else { return .noneEmbedded }
+
+        let allEmbedded = fileStatuses.allSatisfy { $0 == .allEmbedded }
+        if allEmbedded { return .allEmbedded }
+
+        let anyEmbedded = fileStatuses.contains { $0 == .allEmbedded || $0 == .partiallyEmbedded }
+        if anyEmbedded { return .partiallyEmbedded }
+
+        return .noneEmbedded
+    }
+
+    private func collectFileStatuses(from folder: ChunkFolderNode, into statuses: inout [FileEmbeddingStatus]) {
+        for child in folder.children {
+            switch child {
+            case .file(let fileNode):
+                statuses.append(fileAggregateStatus(for: fileNode.fileInfo))
+            case .folder(let subFolder):
+                collectFileStatuses(from: subFolder, into: &statuses)
+            }
+        }
+    }
+
     /// Computes aggregate embedding status for a file's chunks.
     func fileAggregateStatus(for fileInfo: ChunkFileInfo) -> FileEmbeddingStatus {
         let chunks = reviewableChunks(for: fileInfo)
@@ -449,6 +475,9 @@ final class IndexingViewModel {
 
     // MARK: - Delete Documents / Chunks
 
+    /// Notification posted after a document is deleted so other parts of the app can react (e.g. clean up stale pins).
+    static let documentDeletedNotification = Notification.Name("IndexingViewModel.documentDeleted")
+
     /// Deletes a single document and all its chunks from the database.
     func deleteDocument(id: String) async {
         guard !isIndexing else { return }
@@ -458,6 +487,7 @@ final class IndexingViewModel {
             if let appState {
                 appState.indexedDocumentCount = (try? await database.documentCount()) ?? 0
             }
+            NotificationCenter.default.post(name: Self.documentDeletedNotification, object: nil)
         } catch {
             self.error = "Failed to delete document: \(error.localizedDescription)"
         }

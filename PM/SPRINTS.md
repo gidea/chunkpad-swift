@@ -11,62 +11,27 @@
 
 ---
 
-## Sprint 9: Chat UX + Cleanup ✅ Complete
+## Sprint 11: Final Backlog + Release Prep ✅ Complete
 
-**Goal:** Fix streaming scroll, add context budget enforcement, always-visible pinning, and clean up tech debt.
+**Goal:** Implement the last remaining backlog item and harden the codebase for first stable release.
 **Status:** Complete
 
 ### Tasks
 
-#### 4.2.3 Throttled streaming scroll [P1] ✅
+#### 2.4.3 Per-folder aggregate status badge [P3] ✅
 
-Scroll only fires once at the start of generation. As the assistant response grows token by token, new text appears below the fold.
+Folder nodes in the chunk tree sidebar show no embedding status. Only files have status dots.
 
-- [x] **4.2.3.1** Add a throttled scroll-to-bottom during streaming — Timer.publish(every: 0.3) + onReceive scrolls to "bottom" anchor
-- [x] **4.2.3.2** Guard on `isGenerating` — timer fires continuously but only scrolls when generating
-- [x] **4.2.3.3** Stop the timer when `isGenerating` flips to false — guard statement in onReceive
+- [x] **2.4.3.1** Add `folderAggregateStatus(for:)` to IndexingViewModel — recursively collects file statuses
+- [x] **2.4.3.2** Logic: all files `.allEmbedded` → green; any embedded → orange; none → gray
+- [x] **2.4.3.3** Display colored dot on folder rows in the sidebar (same style as file rows)
 
-#### 4.4.4 Auto-truncate context to budget [P2] ✅
+#### Release hardening ✅
 
-No token estimation or budget enforcement. Oversized context causes API errors.
+Full codebase audit and fixes for v1.0 stability.
 
-- [x] **4.4.4.1** Add `estimateTokens(_:)` helper (chars / 4 approximation)
-- [x] **4.4.4.2** In `buildContext`, calculate total tokens for included chunks; drop lowest-relevance non-pinned chunks until under `contextSize × 0.8`
-- [x] **4.4.4.3** Track dropped chunk count via `droppedChunkCount` property
-- [x] **4.4.4.4** Always keep at least 1 chunk; never drop pinned chunks
-
-#### 7.4 Pre-query document pinning [P2] ✅
-
-Pin button is hidden until first query because it's inside `chunksBar`, which only renders when `retrievedChunks` is non-empty.
-
-- [x] **7.4.1** Add persistent pin button in `inputBar` — always visible, uses `pin`/`pin.fill` icon
-- [x] **7.4.2** Opens PinDocumentsSheet same as current flow (loadIndexedDocuments → sheet)
-- [x] **7.4.3** Show pinned document count badge (orange circle) on the button when pins are active
-
-#### 8.1 Extract shared generation task code [P1] ✅
-
-`sendMessage` and `regenerate` duplicate ~40 lines of streaming, cancellation, error classification, and DB persistence logic.
-
-- [x] **8.1.1** Extract `runGeneration(client:contextMessages:assistantIndex:)` private method
-- [x] **8.1.2** Both `sendMessage` and `regenerate` call the shared method
-- [x] **8.1.3** Error handling, cancellation, and DB persistence remain identical
-
-#### 8.2 Fix compiler warnings in ChatView [P1] ✅
-
-Two unused `provider` bindings in `retryLastMessage()` generate compiler warnings.
-
-- [x] **8.2.1** Replace `if let provider = viewModel.pendingRetryProvider` with `if viewModel.pendingRetryProvider != nil`
-- [x] **8.2.2** Replace `if let provider = appState.resolvedProvider()` with `if appState.resolvedProvider() != nil`
-
-#### 8.3 Remove dead indexFolder code path [P2] ✅
-
-`selectAndIndexFolder()` and `indexFolder()` are never called from any View. The current flow is process → review → embed.
-
-- [x] **8.3.1** Remove `selectAndIndexFolder()` and `indexFolder()` from IndexingViewModel (~100 lines)
-- [x] **8.3.2** Verified no remaining references
-
-#### 7.6 Update README.md project structure [P2] ✅
-
-7 files missing from the structure diagram: ChunkFileTree, IndexedFolder, BookmarkService, ChunkFileService, ConversationDatabaseService, KeychainHelper, ChunkStatusBadge.
-
-- [x] **7.6.1** Add all 7 missing files to the project structure diagram with brief descriptions; alphabetize entries within each section
+- [x] Fix 2 compiler warnings: unused `withUnsafeBufferPointer` / `withUnsafeBytes` results in DatabaseService
+- [x] Fix force unwrap on `FileManager.urls().first!` in DatabaseService and ConversationDatabaseService — replaced with `guard let` + `fatalError`
+- [x] Fix force unwrap on `buffer.baseAddress!` in `embeddingToBlob` — replaced with `guard let`
+- [x] Replace 8 silent `try?` conversation DB writes with logged `persistMessage`/`persistConversationTitle` helpers using `os.log`
+- [x] Build: zero errors, zero warnings

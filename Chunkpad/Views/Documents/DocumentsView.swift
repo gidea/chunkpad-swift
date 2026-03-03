@@ -169,6 +169,7 @@ struct DocumentsView: View {
                 Task { indexedDocuments = await viewModel.loadIndexedDocumentsFromDatabase() }
             }
         }
+        .onChange(of: selectedNodeID) { _, _ in chunkFilter = "" }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if viewModel.indexedFolder != nil {
                 Task { await viewModel.checkForModifiedChunkFiles() }
@@ -303,7 +304,17 @@ struct DocumentsView: View {
             OutlineGroup(tree.rootFolder.children, children: \.children) { node in
                 switch node {
                 case .folder(let n):
-                    Label(n.name, systemImage: "folder")
+                    // 2.4.3: Per-folder aggregate status badge
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .foregroundStyle(.secondary)
+                        Text(n.name)
+                        Spacer()
+                        let status = viewModel.folderAggregateStatus(for: n)
+                        Image(systemName: status.systemImage)
+                            .font(.caption2)
+                            .foregroundStyle(status.dotColor)
+                    }
                 case .file(let n):
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text")

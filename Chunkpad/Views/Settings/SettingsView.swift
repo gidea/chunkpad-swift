@@ -7,6 +7,11 @@ struct SettingsView: View {
     @State private var openaiValidation: ValidationState = .idle
     @State private var ollamaValidation: ValidationState = .idle
 
+    // 5.4: Database management state
+    @State private var dbFileSize: Int64?
+    @State private var dbChunkCount: Int?
+    @State private var showClearDatabaseConfirmation = false
+
     var body: some View {
         @Bindable var appState = appState
 
@@ -60,11 +65,68 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if appState.indexedDocumentCount > 0 {
-                LabeledContent("Indexed Documents") {
-                    Text("\(appState.indexedDocumentCount)")
-                }
+            LabeledContent("Documents") {
+                Text("\(appState.indexedDocumentCount)")
+                    .foregroundStyle(.secondary)
             }
+            LabeledContent("Chunks") {
+                Text(dbChunkCount.map { "\($0)" } ?? "—")
+                    .foregroundStyle(.secondary)
+            }
+            LabeledContent("Size") {
+                Text(formattedDatabaseSize)
+                    .foregroundStyle(.secondary)
+            }
+
+            if appState.isDatabaseConnected && appState.indexedDocumentCount > 0 {
+                Button("Clear All Data…", role: .destructive) {
+                    showClearDatabaseConfirmation = true
+                }
+                .controlSize(.small)
+            }
+        }
+        .task { await refreshDatabaseStats() }
+        .confirmationDialog("Clear All Data", isPresented: $showClearDatabaseConfirmation) {
+            Button("Clear Database", role: .destructive) {
+                Task { await clearDatabase() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will delete all indexed documents, chunks, and embeddings. This cannot be undone.")
+        }
+    }
+
+    private var formattedDatabaseSize: String {
+        guard let size = dbFileSize else { return "—" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: size)
+    }
+
+    private func refreshDatabaseStats() async {
+        guard appState.isDatabaseConnected else { return }
+        let db = DatabaseService()
+        do {
+            try await db.connect()
+            dbChunkCount = try await db.totalChunkCount()
+            dbFileSize = await db.databaseFileSize()
+        } catch {
+            dbChunkCount = nil
+            dbFileSize = nil
+        }
+    }
+
+    private func clearDatabase() async {
+        let db = DatabaseService()
+        do {
+            try await db.connect()
+            try await db.deleteAllData()
+            appState.indexedDocumentCount = 0
+            dbChunkCount = 0
+            await refreshDatabaseStats()
+            NotificationCenter.default.post(name: IndexingViewModel.documentDeletedNotification, object: nil)
+        } catch {
+            // Silently fail; user can retry
         }
     }
 

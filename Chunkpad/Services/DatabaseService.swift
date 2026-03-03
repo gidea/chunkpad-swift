@@ -43,10 +43,13 @@ actor DatabaseService {
     // MARK: - Initialization
 
     init() {
-        let appSupport = FileManager.default.urls(
+        guard let baseURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        ).first!.appendingPathComponent("Chunkpad", isDirectory: true)
+        ).first else {
+            fatalError("Cannot resolve Application Support directory")
+        }
+        let appSupport = baseURL.appendingPathComponent("Chunkpad", isDirectory: true)
 
         // Ensure directory exists
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
@@ -516,6 +519,20 @@ actor DatabaseService {
         return rows.first ?? 0
     }
 
+    func totalChunkCount() throws -> Int {
+        let rows: [Int] = try query("SELECT COUNT(*) FROM chunks") { stmt in
+            Int(sqlite3_column_int64(stmt, 0))
+        }
+        return rows.first ?? 0
+    }
+
+    /// Returns the database file size in bytes, or nil if not available.
+    func databaseFileSize() -> Int64? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: databasePath),
+              let size = attrs[.size] as? Int64 else { return nil }
+        return size
+    }
+
     // MARK: - Chunk CRUD
 
     func insertChunk(_ chunk: Chunk, documentID: String, embedding: [Float]) throws {
@@ -547,7 +564,7 @@ actor DatabaseService {
 
         // Bind embedding as float32 blob
         let blobSize = embedding.count * MemoryLayout<Float>.size
-        embedding.withUnsafeBufferPointer { buffer in
+        _ = embedding.withUnsafeBufferPointer { buffer in
             sqlite3_bind_blob(stmt, 2, buffer.baseAddress, Int32(blobSize),
                              unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         }
@@ -798,7 +815,8 @@ actor DatabaseService {
 
     private func embeddingToBlob(_ embedding: [Float]) -> Data {
         embedding.withUnsafeBufferPointer { buffer in
-            Data(bytes: buffer.baseAddress!, count: buffer.count * MemoryLayout<Float>.size)
+            guard let addr = buffer.baseAddress else { return Data() }
+            return Data(bytes: addr, count: buffer.count * MemoryLayout<Float>.size)
         }
     }
 
@@ -860,7 +878,7 @@ actor DatabaseService {
         case .text(let v):
             sqlite3_bind_text(stmt, index, v, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         case .blob(let data):
-            data.withUnsafeBytes { buffer in
+            _ = data.withUnsafeBytes { buffer in
                 sqlite3_bind_blob(stmt, index, buffer.baseAddress, Int32(buffer.count),
                                  unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             }

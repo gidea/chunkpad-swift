@@ -1,4 +1,7 @@
 import SwiftUI
+import os.log
+
+private let logger = Logger(subsystem: "com.chunkpad", category: "ChatViewModel")
 
 /// A persisted chat conversation (metadata only; messages are stored separately).
 /// Declared here so the @Observable macro expansion can resolve the type.
@@ -227,12 +230,12 @@ final class ChatViewModel {
         if !userMessageAlreadyAdded {
             let userMessage = Message(role: .user, content: text)
             messages.append(userMessage)
-            if let cid = currentConversationId, let conversationDB {
-                try? await conversationDB.insertMessage(userMessage, conversationId: cid)
-                if messages.count == 1, let convId = currentConversationId {
+            if let cid = currentConversationId {
+                await persistMessage(userMessage, conversationId: cid)
+                if messages.count == 1 {
                     let title = String(text.prefix(50))
                     let trimmed = title.count < text.count ? title + "…" : title
-                    try? await conversationDB.updateConversation(id: convId, title: trimmed, updatedAt: Date())
+                    await persistConversationTitle(trimmed, conversationId: cid)
                 }
                 await refreshConversations()
             }
@@ -317,8 +320,8 @@ final class ChatViewModel {
                     referencedChunkIDs: retrievedChunks.map(\.id)
                 )
                 messages.append(errMessage)
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(errMessage, conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(errMessage, conversationId: cid)
                     await refreshConversations()
                 }
             }
@@ -336,12 +339,12 @@ final class ChatViewModel {
         }
         let userMessage = Message(role: .user, content: text)
         messages.append(userMessage)
-        if let cid = currentConversationId, let conversationDB {
-            try? await conversationDB.insertMessage(userMessage, conversationId: cid)
+        if let cid = currentConversationId {
+            await persistMessage(userMessage, conversationId: cid)
             if messages.count == 1 {
                 let title = String(text.prefix(50))
                 let trimmed = title.count < text.count ? title + "…" : title
-                try? await conversationDB.updateConversation(id: cid, title: trimmed, updatedAt: Date())
+                await persistConversationTitle(trimmed, conversationId: cid)
             }
             await refreshConversations()
         }
@@ -605,24 +608,24 @@ final class ChatViewModel {
                 if Task.isCancelled && !messages[assistantIndex].content.isEmpty {
                     messages[assistantIndex].content += "\n\n(Stopped)"
                 }
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(messages[assistantIndex], conversationId: cid)
                     await refreshConversations()
                 }
             } catch is CancellationError {
                 if !messages[assistantIndex].content.isEmpty {
                     messages[assistantIndex].content += "\n\n(Stopped)"
                 }
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(messages[assistantIndex], conversationId: cid)
                     await refreshConversations()
                 }
             } catch {
                 let kind = classify(error)
                 streamingError = kind
                 self.error = kind.userMessage
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(messages[assistantIndex], conversationId: cid)
                     await refreshConversations()
                 }
             }
@@ -632,6 +635,26 @@ final class ChatViewModel {
     /// Cancels the current generation (streaming) task. Safe to call when not generating.
     func cancelGeneration() {
         generationTask?.cancel()
+    }
+
+    /// Persists a message to the conversation database with error logging.
+    private func persistMessage(_ message: Message, conversationId: String) async {
+        guard let conversationDB else { return }
+        do {
+            try await conversationDB.insertMessage(message, conversationId: conversationId)
+        } catch {
+            logger.error("Failed to persist message: \(error.localizedDescription)")
+        }
+    }
+
+    /// Updates conversation title with error logging.
+    private func persistConversationTitle(_ title: String, conversationId: String) async {
+        guard let conversationDB else { return }
+        do {
+            try await conversationDB.updateConversation(id: conversationId, title: title, updatedAt: Date())
+        } catch {
+            logger.error("Failed to update conversation title: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Streaming Error Classification
