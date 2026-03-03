@@ -21,18 +21,18 @@
 
 ---
 
-## Epic 2: Documents Library (partial — Sprint 8 complete)
+## Epic 2: Documents Library ✅ (Sprint 11 complete)
 
 **Goal:** Robust document management — browsable, searchable, fully lifecycle-managed.
 
-*Tasks 2.3, 2.5.1, 2.6 shipped in Sprint 8. See `DONE.md` Sprint 8 for details.*
+*Tasks 2.3, 2.5.1, 2.6 shipped in Sprint 8. Task 2.4.3 shipped in Sprint 11. See `DONE.md` for details.*
 
 | Task | Priority | Notes |
 |---|---|---|
 | ~~2.3 Chunk grid/list view overhaul~~ | ~~P1~~ | ✅ Done — View mode toggle, grid cards, filter bar |
 | ~~2.5.1 Persist lastKnownModificationDates to DB~~ | ~~P2~~ | ✅ Done — UserDefaults persistence with didSet |
 | ~~2.6 Delete individual documents/chunks~~ | ~~P2~~ | ✅ Done — Context menus, confirmation alerts, cascade delete |
-| 2.4.3 Per-folder aggregate status badge | P3 | Depends on 2.3 folder list |
+| ~~2.4.3 Per-folder aggregate status badge~~ | ~~P3~~ | ✅ Done — Recursive folder status with colored dot in sidebar |
 
 ---
 
@@ -54,33 +54,33 @@
 
 ---
 
-## Epic 4: Chat & RAG Pipeline (partial — Sprint 8 complete)
+## Epic 4: Chat & RAG Pipeline ✅ (Sprint 9 complete)
 
 **Goal:** Reliable chat with correct RAG, context management, and resilient streaming.
 
-*Tasks 4.6–4.7 shipped in Sprint 8. See `DONE.md` Sprint 8 for details.*
+*Tasks 4.6–4.7 shipped in Sprint 8. Tasks 4.2.3, 4.4.4 shipped in Sprint 9. See `DONE.md` for details.*
 
 | Task | Priority | Notes |
 |---|---|---|
-| 4.2.3 Throttled streaming scroll | P2 | Per-token auto-scroll throttle |
-| 4.4.4 Auto-truncate context to budget | P2 | Chunk by relevance until contextSize |
+| ~~4.2.3 Throttled streaming scroll~~ | ~~P1~~ | ✅ Done — Timer.publish(every: 0.3) + onReceive auto-scroll |
+| ~~4.4.4 Auto-truncate context to budget~~ | ~~P2~~ | ✅ Done — estimateTokens, drop lowest-relevance non-pinned chunks |
 | ~~4.6 Persist pinned document IDs~~ | ~~P2~~ | ✅ Done — AppState persistence, validation on load |
 | ~~4.7 Conversation management UX~~ | ~~P2~~ | ✅ Done — Swipe-delete, rename, message count |
 
 ---
 
-## Epic 5: Settings & Configuration (partial — Sprint 7 complete)
+## Epic 5: Settings & Configuration ✅ (Sprint 10 complete)
 
 **Goal:** All configurable params exposed, validated, clearly connected to features.
 
-*Tasks 5.1–5.3 shipped in Sprint 7. See `DONE.md` Sprint 7 for details.*
+*Tasks 5.1–5.3 shipped in Sprint 7. Task 5.4 shipped in Sprint 10. See `DONE.md` for details.*
 
 | Task | Priority | Notes |
 |---|---|---|
 | ~~5.1 Configurable search parameters (k, minScore)~~ | ~~P1~~ | ✅ Done — Slider + TextField in Settings, clamped in ChatViewModel |
 | ~~5.2 API key validation ("Test" button)~~ | ~~P2~~ | ✅ Done — Test buttons for Anthropic, OpenAI, Ollama |
 | ~~5.3 Configurable LLM parameters (temp, maxTokens)~~ | ~~P2~~ | ✅ Done — Threaded through all 4 LLM clients |
-| 5.4 Database management in Settings | P3 | Size, count, clear, export |
+| ~~5.4 Database management in Settings~~ | ~~P3~~ | ✅ Done — Size, chunk count, clear action with confirmation |
 
 ---
 
@@ -99,20 +99,48 @@
 
 ---
 
-## Epic 7: Polish & UX (partial — Sprint 7 complete)
+## Epic 7: Polish & UX ✅ (Sprint 10 complete)
 
 **Goal:** Quality-of-life improvements that make the app feel polished.
 
-*Tasks 7.1–7.2 shipped in Sprint 7. See `DONE.md` Sprint 7 for details.*
+*Tasks 7.1–7.2 shipped in Sprint 7. Tasks 7.4, 7.6 shipped in Sprint 9. Tasks 7.3, 7.5 shipped in Sprint 10. See `DONE.md` for details.*
 
 | Task | Priority | Notes |
 |---|---|---|
 | ~~7.1 Markdown rendering for assistant responses~~ | ~~P2~~ | ✅ Done — MarkdownContentView with code block support |
 | ~~7.2 Distinguish pinned chunks visually~~ | ~~P2~~ | ✅ Done — Pin icon, orange tint, "Pinned" pill |
-| 7.5 Generation mode indicator (dot per provider) | P3 | Green = configured, gray = not |
-| 7.3 Collapsible chunks bar | P3 | Chevron toggle, compact summary |
-| 7.4 Pre-query document pinning | P3 | Always-visible pin button |
-| 7.6 Update README.md project structure | P2 | Add new files to structure diagram |
+| ~~7.4 Pre-query document pinning~~ | ~~P2~~ | ✅ Done — Always-visible pin button in inputBar with badge |
+| ~~7.6 Update README.md project structure~~ | ~~P2~~ | ✅ Done — 7 missing files added to structure diagram |
+| ~~7.3 Collapsible chunks bar~~ | ~~P3~~ | ✅ Done — Chevron toggle, compact summary with token estimate |
+| ~~7.5 Generation mode indicator~~ | ~~P3~~ | ✅ Done — Green/gray dot per provider in toolbar picker |
+
+---
+
+## Epic 8: Code Quality & Cleanup ✅ (Sprint 9 complete)
+
+**Goal:** Eliminate tech debt, remove dead code, fix compiler warnings.
+
+*All tasks shipped in Sprint 9. See `DONE.md` Sprint 9 for details.*
+
+| Task | Priority | Notes |
+|---|---|---|
+| ~~8.1 Extract shared generation task code~~ | ~~P1~~ | ✅ Done — runGeneration() shared method |
+| ~~8.2 Fix compiler warnings in ChatView~~ | ~~P1~~ | ✅ Done — Replaced unused let bindings with != nil |
+| ~~8.3 Remove dead indexFolder code path~~ | ~~P2~~ | ✅ Done — ~100 lines removed from IndexingViewModel |
+
+---
+
+## Epic 9: UX Robustness & Feedback ✅ (Sprint 10 complete)
+
+**Goal:** Surface hidden state to users, fix edge-case UX gaps, improve feedback loops.
+
+*All tasks shipped in Sprint 10. See `DONE.md` Sprint 10 for details.*
+
+| Task | Priority | Notes |
+|---|---|---|
+| ~~9.1 Surface droppedChunkCount in regenerate bar~~ | ~~P2~~ | ✅ Done — Orange "N trimmed to fit budget" in regenerate bar |
+| ~~9.2 Validate pinned docs after delete~~ | ~~P2~~ | ✅ Done — NotificationCenter post + MainView listener |
+| ~~9.3 Auto-clear chunk filter on file switch~~ | ~~P3~~ | ✅ Done — onChange(of: selectedNodeID) clears filter |
 
 ---
 
@@ -124,3 +152,5 @@
 | ~~**Sprint 6**~~ | ~~Error Handling~~ | ✅ Complete |
 | ~~**Sprint 7**~~ | ~~Settings + Polish~~ | ✅ Complete |
 | ~~**Sprint 8**~~ | ~~Documents Polish~~ | ✅ Complete |
+| ~~**Sprint 9**~~ | ~~Chat UX + Cleanup~~ | ✅ Complete |
+| ~~**Sprint 10**~~ | ~~Final Polish~~ | ✅ Complete |

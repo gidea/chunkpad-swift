@@ -110,6 +110,10 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await chatViewModel.refreshConversations() }
         }
+        // 9.2: Clean up stale pins when a document is deleted
+        .onReceive(NotificationCenter.default.publisher(for: IndexingViewModel.documentDeletedNotification)) { _ in
+            Task { await chatViewModel.validatePinnedDocuments() }
+        }
         .onChange(of: chatViewModel.currentConversationId) { _, newId in
             appState.selectedItem = .chat(conversationId: newId)
         }

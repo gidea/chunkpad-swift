@@ -54,10 +54,13 @@ actor ConversationDatabaseService {
     }
 
     init() {
-        let appSupport = FileManager.default.urls(
+        guard let baseURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        ).first!.appendingPathComponent("Chunkpad", isDirectory: true)
+        ).first else {
+            fatalError("Cannot resolve Application Support directory")
+        }
+        let appSupport = baseURL.appendingPathComponent("Chunkpad", isDirectory: true)
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
         self.databasePath = appSupport.appendingPathComponent("chunkpad_chat.db").path
     }

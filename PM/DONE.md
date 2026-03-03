@@ -6,6 +6,52 @@
 
 ---
 
+## Sprint 9: Chat UX + Cleanup ✅ Complete
+
+**Goal:** Fix streaming scroll, add context budget enforcement, always-visible pinning, and clean up tech debt.
+**Status:** Complete
+
+### Tasks
+
+#### 4.2.3 Throttled streaming scroll [P1] ✅
+
+- [x] Timer.publish(every: 0.3) + onReceive scrolls to "bottom" anchor
+- [x] Guard on `isGenerating` — timer fires continuously but only scrolls when generating
+- [x] Stop the timer when `isGenerating` flips to false — guard statement in onReceive
+
+#### 4.4.4 Auto-truncate context to budget [P2] ✅
+
+- [x] `estimateTokens(_:)` helper (chars / 4 approximation)
+- [x] In `buildContext`, drop lowest-relevance non-pinned chunks until under `contextSize × 0.8`
+- [x] Track dropped chunk count via `droppedChunkCount` property
+- [x] Always keep at least 1 chunk; never drop pinned chunks
+
+#### 7.4 Pre-query document pinning [P2] ✅
+
+- [x] Persistent pin button in `inputBar` — always visible, `pin`/`pin.fill` icon
+- [x] Opens PinDocumentsSheet same as current flow
+- [x] Orange count badge when pins are active
+
+#### 8.1 Extract shared generation task code [P1] ✅
+
+- [x] `runGeneration(client:contextMessages:assistantIndex:)` private method
+- [x] Both `sendMessage` and `regenerate` call the shared method
+- [x] Error handling, cancellation, and DB persistence remain identical
+
+#### 8.2 Fix compiler warnings in ChatView [P1] ✅
+
+- [x] Replaced unused `if let provider =` with `!= nil` checks
+
+#### 8.3 Remove dead indexFolder code path [P2] ✅
+
+- [x] Removed `selectAndIndexFolder()` and `indexFolder()` (~100 lines)
+
+#### 7.6 Update README.md project structure [P2] ✅
+
+- [x] Added 7 missing files; alphabetized entries within each section
+
+---
+
 ## Sprint 8: Documents Polish ✅ Complete
 
 **Goal:** Robust document lifecycle — delete documents/chunks, persist pinned docs and modification dates, conversation management UX, and chunk view overhaul.

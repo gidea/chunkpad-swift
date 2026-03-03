@@ -269,115 +269,6 @@ final class IndexingViewModel {
 
     // MARK: - Index Folder (Full Pipeline — Embed + DB)
 
-    /// Opens NSOpenPanel, lets user select a folder, then indexes all supported documents.
-    /// Downloads the embedding model on first run if needed.
-    func selectAndIndexFolder() async {
-        guard !isIndexing else { return }
-
-        // Show folder picker
-        guard let result = await pickFolder() else { return }
-
-        await indexFolder(at: result.url)
-    }
-
-    /// Index all documents in a given folder (full pipeline: embed + DB).
-    func indexFolder(at url: URL) async {
-        isIndexing = true
-        error = nil
-        progress = 0
-        processedFiles = 0
-
-        let chunkSizeChars = appState?.chunkSizeChars ?? DocumentProcessor.defaultChunkSizeChars
-        let overlapChars = appState?.chunkOverlapChars ?? DocumentProcessor.defaultOverlapChars
-
-        do {
-            // 1. Connect to database
-            try await ensureDatabaseConnected()
-
-            // 2. Download & load embedding model (lazy — only downloads if not cached)
-            currentDocument = "Preparing embedding model..."
-            isDownloadingModel = true
-
-            // Set up status callback to bridge actor → MainActor
-            await embedder.setStatusCallback { [weak self] status in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.appState?.embeddingModelStatus = status
-
-                    if case .downloading(let p) = status {
-                        self.modelDownloadProgress = p
-                        self.currentDocument = "Downloading embedding model... \(Int(p * 100))%"
-                    } else if case .loading = status {
-                        self.currentDocument = "Loading embedding model into memory..."
-                    }
-                }
-            }
-
-            try await embedder.ensureModelReady()
-            isDownloadingModel = false
-
-            // 3. Discover & parse all documents in the folder
-            currentDocument = "Scanning folder..."
-            let fileChunks = try await processor.processDirectory(
-                at: url,
-                chunkSizeChars: chunkSizeChars,
-                overlapChars: overlapChars
-            )
-            totalFiles = fileChunks.count
-
-            guard totalFiles > 0 else {
-                currentDocument = "No supported documents found."
-                isIndexing = false
-                return
-            }
-
-            // 4. Process each file: embed all chunks, then insert document + chunks atomically
-            for (fileURL, chunks) in fileChunks {
-                currentDocument = fileURL.lastPathComponent
-                let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
-
-                let docType = IndexedDocument.DocumentType(fromExtension: fileURL.pathExtension)
-                let document = IndexedDocument(
-                    fileName: fileURL.lastPathComponent,
-                    filePath: fileURL.path,
-                    documentType: docType,
-                    chunkCount: chunks.count,
-                    fileSize: fileSize
-                )
-
-                var chunksWithEmbeddings: [(Chunk, [Float])] = []
-                for chunk in chunks {
-                    let embedding = try await embedder.embed(chunk.content)
-                    let chunkModel = Chunk(
-                        title: chunk.title,
-                        content: chunk.content,
-                        documentType: chunk.documentType,
-                        slideNumber: chunk.slideNumber,
-                        sourcePath: chunk.sourcePath
-                    )
-                    chunksWithEmbeddings.append((chunkModel, embedding))
-                }
-                try await database.insertDocumentWithChunks(document: document, chunksWithEmbeddings: chunksWithEmbeddings)
-
-                processedFiles += 1
-                progress = Double(processedFiles) / Double(totalFiles)
-            }
-
-            currentDocument = "Done! Indexed \(totalFiles) documents."
-
-            // Update global document count so ChatViewModel knows documents are available
-            if let appState {
-                appState.indexedDocumentCount = (appState.indexedDocumentCount) + totalFiles
-            }
-        } catch {
-            self.error = error.localizedDescription
-            currentDocument = "Error: \(error.localizedDescription)"
-            isDownloadingModel = false
-        }
-
-        isIndexing = false
-    }
-
     // MARK: - Embed Chunks
 
     func embedApprovedChunks(from reviewableChunks: [ReviewableChunk]) async {
@@ -501,6 +392,32 @@ final class IndexingViewModel {
         return result
     }
 
+    /// 2.4.3: Computes aggregate embedding status for all files inside a folder (recursively).
+    func folderAggregateStatus(for folder: ChunkFolderNode) -> FileEmbeddingStatus {
+        var fileStatuses: [FileEmbeddingStatus] = []
+        collectFileStatuses(from: folder, into: &fileStatuses)
+        guard !fileStatuses.isEmpty else { return .noneEmbedded }
+
+        let allEmbedded = fileStatuses.allSatisfy { $0 == .allEmbedded }
+        if allEmbedded { return .allEmbedded }
+
+        let anyEmbedded = fileStatuses.contains { $0 == .allEmbedded || $0 == .partiallyEmbedded }
+        if anyEmbedded { return .partiallyEmbedded }
+
+        return .noneEmbedded
+    }
+
+    private func collectFileStatuses(from folder: ChunkFolderNode, into statuses: inout [FileEmbeddingStatus]) {
+        for child in folder.children {
+            switch child {
+            case .file(let fileNode):
+                statuses.append(fileAggregateStatus(for: fileNode.fileInfo))
+            case .folder(let subFolder):
+                collectFileStatuses(from: subFolder, into: &statuses)
+            }
+        }
+    }
+
     /// Computes aggregate embedding status for a file's chunks.
     func fileAggregateStatus(for fileInfo: ChunkFileInfo) -> FileEmbeddingStatus {
         let chunks = reviewableChunks(for: fileInfo)
@@ -558,6 +475,9 @@ final class IndexingViewModel {
 
     // MARK: - Delete Documents / Chunks
 
+    /// Notification posted after a document is deleted so other parts of the app can react (e.g. clean up stale pins).
+    static let documentDeletedNotification = Notification.Name("IndexingViewModel.documentDeleted")
+
     /// Deletes a single document and all its chunks from the database.
     func deleteDocument(id: String) async {
         guard !isIndexing else { return }
@@ -567,6 +487,7 @@ final class IndexingViewModel {
             if let appState {
                 appState.indexedDocumentCount = (try? await database.documentCount()) ?? 0
             }
+            NotificationCenter.default.post(name: Self.documentDeletedNotification, object: nil)
         } catch {
             self.error = "Failed to delete document: \(error.localizedDescription)"
         }
