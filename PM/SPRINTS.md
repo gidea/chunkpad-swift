@@ -11,27 +11,48 @@
 
 ---
 
-## Sprint 11: Final Backlog + Release Prep ✅ Complete
+## Sprint 13: Table Parsing + Section-Aware Chunking ✅ Complete
 
-**Goal:** Implement the last remaining backlog item and harden the codebase for first stable release.
+**Goal:** Improve document parsing with proper table handling and section-aware chunking for better knowledge extraction.
 **Status:** Complete
 
 ### Tasks
 
-#### 2.4.3 Per-folder aggregate status badge [P3] ✅
+#### 12.1 DOCX table extraction via HTML [P1] ✅
 
-Folder nodes in the chunk tree sidebar show no embedding status. Only files have status dots.
+- [x] Changed `textutil -convert txt` to `textutil -convert html` via new `runTextutilHTML(at:)` method
+- [x] Added `htmlToMarkdown(_ html:)` — finds `<table>...</table>` blocks, converts to markdown tables
+- [x] Added `parseHTMLTable(_ tableHTML:)` — extracts `<tr>` rows, `<td>`/`<th>` cells, builds pipe-separated markdown
+- [x] Non-table HTML content stripped of tags with `stripHTMLTags(_ html:)`, common entities decoded
+- [x] Column count normalized across rows; pipes in cell content escaped with `\|`
+- [x] v1 scope: skips nested tables and colspan/rowspan (treated as flat text)
 
-- [x] **2.4.3.1** Add `folderAggregateStatus(for:)` to IndexingViewModel — recursively collects file statuses
-- [x] **2.4.3.2** Logic: all files `.allEmbedded` → green; any embedded → orange; none → gray
-- [x] **2.4.3.3** Display colored dot on folder rows in the sidebar (same style as file rows)
+#### 12.2 PDF heuristic table detection [P2] ✅
 
-#### Release hardening ✅
+- [x] Added `detectAndConvertTables(in text:)` — scans plain text for tabular patterns
+- [x] Tab-separated detection: lines with 1+ tab character grouped into table blocks (min 2 rows)
+- [x] Multi-space aligned columns: `detectAlignedColumns(lines:)` finds consistent 3+ space gaps across 60%+ of lines
+- [x] `splitByColumnPositions(_:positions:)` splits lines by detected column boundaries
+- [x] Integrated into `processPDF` after `page.string` extraction
 
-Full codebase audit and fixes for v1.0 stability.
+#### 12.3 Plain text table detection [P3] ✅
 
-- [x] Fix 2 compiler warnings: unused `withUnsafeBufferPointer` / `withUnsafeBytes` results in DatabaseService
-- [x] Fix force unwrap on `FileManager.urls().first!` in DatabaseService and ConversationDatabaseService — replaced with `guard let` + `fatalError`
-- [x] Fix force unwrap on `buffer.baseAddress!` in `embeddingToBlob` — replaced with `guard let`
-- [x] Replace 8 silent `try?` conversation DB writes with logged `persistMessage`/`persistConversationTitle` helpers using `os.log`
-- [x] Build: zero errors, zero warnings
+- [x] Reuses `detectAndConvertTables(in:)` from 12.2 in `processPlainText`
+- [x] Applied before markdown wrapping so tables in .txt files are converted
+
+#### 12.4 Section-aware chunking [P1] ✅
+
+- [x] Added `splitIntoSectionChunks(…)` — splits at markdown heading boundaries (`# / ## / ###`)
+- [x] `parseMarkdownSections(_ text:)` — parses headings with level tracking and heading stack
+- [x] `containsMarkdownHeadings(_ text:)` — detects headings outside fenced code blocks
+- [x] `removeFencedCodeBlocks(_ text:)` — prevents false heading matches inside ``` blocks
+- [x] Oversized sections fall back to paragraph splitting via `splitIntoParagraphChunks`
+- [x] `splitIntoChunks` now auto-delegates to section-aware path when headings detected
+- [x] Original paragraph-splitting logic preserved as `splitIntoParagraphChunks` (unchanged behavior)
+
+#### 12.5 Hierarchical chunk titles [P2] ✅
+
+- [x] `MarkdownSection` struct tracks `headingPath: [String]` — hierarchical heading ancestry
+- [x] Heading stack maintained during parsing: pops headings at same or deeper level
+- [x] `buildHierarchicalTitle(from:)` joins path as `"Document > Section > Subsection"`
+- [x] Oversized sections that fall back to paragraph splitting append `[N]` suffix

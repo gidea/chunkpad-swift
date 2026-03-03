@@ -6,6 +6,106 @@
 
 ---
 
+## Sprint 12: Model Upgrade + File Naming Fix ✅ Complete
+
+**Goal:** Upgrade embedding model to bge-large-en-v1.5 (1024 dims), tie chunk size defaults to model token window, and fix chunk file naming bug.
+**Status:** Complete
+
+### Tasks
+
+#### 10.1 Upgrade EmbeddingService to bge-large [P0] ✅
+- [x] Changed `modelConfiguration` from `.bge_base` to `.bge_large`
+- [x] Changed `embeddingDimension` from 768 to 1024
+- [x] Updated `modelDisplayName`, `modelID`, `modelSize` (~1.3 GB)
+- [x] Updated doc comment block for 1024 dims / 1.3 GB
+
+#### 10.2 Update DatabaseService schema (768→1024) [P0] ✅
+- [x] Bumped `currentSchemaVersion` from 9 to 10
+- [x] Changed CREATE TABLE `float[768]` to `float[1024]`
+- [x] Migration case 10: DROP + recreate vec_chunks with 1024 dims
+- [x] Clear `embedded_chunk_refs` in migration (all embeddings invalidated)
+
+#### 10.3 Add maxTokenWindow to EmbeddingService [P1] ✅
+- [x] `static let maxTokenWindow: Int = 512` (BERT max_position_embeddings)
+
+#### 10.4 Update AppState chunk size defaults [P1] ✅
+- [x] Default `chunkSizeTokens` from 1000 to 512
+- [x] `loadFromUserProfile()` fallback uses `EmbeddingService.maxTokenWindow`
+- [x] `DocumentProcessor.defaultChunkSizeChars` derived from `EmbeddingService.maxTokenWindow * 4`
+
+#### 10.5 Model-aware chunk size in SettingsView [P2] ✅
+- [x] "Embedding model" and "Model token limit" labels
+- [x] Orange warning when `chunkSizeTokens > maxTokenWindow`
+
+#### 11.1 Fix chunkFileURL extension stripping [P0] ✅
+- [x] `deletingPathExtension` before `appendingPathExtension("md")` in both code paths
+- [x] Example: `report.pdf` → `report.md` (was `report.pdf.md`)
+
+#### 11.2 Update inferSourcePath for new naming [P1] ✅
+- [x] Updated doc comments to reflect extensionless inferred paths
+
+#### Stale reference cleanup ✅
+- [x] Updated doc comments in BundledLLMService, ChatViewModel, IndexingViewModel from bge-base to bge-large
+
+---
+
+## Sprint 11: Final Backlog + Release Prep ✅ Complete
+
+**Goal:** Implement the last remaining backlog item and harden the codebase for first stable release.
+**Status:** Complete
+
+### Tasks
+
+#### 2.4.3 Per-folder aggregate status badge [P3] ✅
+
+- [x] **2.4.3.1** Add `folderAggregateStatus(for:)` to IndexingViewModel — recursively collects file statuses
+- [x] **2.4.3.2** Logic: all files `.allEmbedded` → green; any embedded → orange; none → gray
+- [x] **2.4.3.3** Display colored dot on folder rows in the sidebar (same style as file rows)
+
+#### Release hardening ✅
+
+Full codebase audit and fixes for v1.0 stability.
+
+- [x] Fix 2 compiler warnings: unused `withUnsafeBufferPointer` / `withUnsafeBytes` results in DatabaseService
+- [x] Fix force unwrap on `FileManager.urls().first!` in DatabaseService and ConversationDatabaseService — replaced with `guard let` + `fatalError`
+- [x] Fix force unwrap on `buffer.baseAddress!` in `embeddingToBlob` — replaced with `guard let`
+- [x] Replace 8 silent `try?` conversation DB writes with logged `persistMessage`/`persistConversationTitle` helpers using `os.log`
+- [x] Build: zero errors, zero warnings
+
+---
+
+## Sprint 10: Final Polish ✅ Complete
+
+**Goal:** Surface hidden state, fix UX edge cases, add database management, and close out remaining polish tasks.
+**Status:** Complete
+
+### Tasks
+
+#### 9.3 Auto-clear chunk filter on file switch [P3] ✅
+- [x] `.onChange(of: selectedNodeID) { _, _ in chunkFilter = "" }`
+
+#### 9.1 Surface droppedChunkCount in regenerate bar [P2] ✅
+- [x] Orange "N trimmed to fit budget" text in regenerate bar when `droppedChunkCount > 0`
+
+#### 9.2 Validate pinned docs after delete [P2] ✅
+- [x] `documentDeletedNotification` static property on IndexingViewModel
+- [x] MainView `.onReceive` listener calls `chatViewModel.validatePinnedDocuments()`
+
+#### 7.3 Collapsible chunks bar [P3] ✅
+- [x] `isChunksBarCollapsed` state with chevron toggle
+- [x] Compact summary: "N/M chunks · ~X tokens"
+
+#### 5.4 Database management in Settings [P3] ✅
+- [x] Stats display: document count, chunk count, formatted file size
+- [x] "Clear All Data…" destructive button with confirmation dialog
+- [x] `totalChunkCount()` and `databaseFileSize()` methods on DatabaseService
+
+#### 7.5 Generation mode indicator [P3] ✅
+- [x] Green/gray dot per provider in toolbar picker
+- [x] `isProviderConfigured(_:)` checks API key / endpoint presence
+
+---
+
 ## Sprint 9: Chat UX + Cleanup ✅ Complete
 
 **Goal:** Fix streaming scroll, add context budget enforcement, always-visible pinning, and clean up tech debt.
