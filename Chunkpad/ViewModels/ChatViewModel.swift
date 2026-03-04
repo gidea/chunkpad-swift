@@ -86,6 +86,9 @@ final class ChatViewModel {
     /// List of past conversations for the sidebar. Refresh via refreshConversations().
     var conversations: [Conversation] = []
 
+    /// Collections available for scoping hybrid search. Populated by refreshCollections().
+    var collections: [Collection] = []
+
     // MARK: - Llama Offer State
 
     /// When true, the chat view shows an alert offering to download Llama 3.2.
@@ -165,6 +168,17 @@ final class ChatViewModel {
             error = nil
         } catch {
             self.error = "Failed to load conversation: \(error.localizedDescription)"
+        }
+    }
+
+    /// Refreshes the collection list from the main DB (used by the scope picker in ChatView).
+    /// Non-fatal — if the DB call fails, the picker simply shows no collections.
+    func refreshCollections() async {
+        do {
+            try await database.connect()
+            collections = try await database.fetchCollections()
+        } catch {
+            // Non-fatal — scope picker stays empty; user can still query all documents
         }
     }
 
@@ -273,7 +287,8 @@ final class ChatViewModel {
                 queryEmbedding: queryEmbedding,
                 queryText: text,
                 k: k,
-                minScore: minScore
+                minScore: minScore,
+                collectionId: appState?.selectedCollectionId
             )
 
             // 5b. Merge pinned document chunks (boosted to score 1.0)

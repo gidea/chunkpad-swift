@@ -19,6 +19,14 @@ struct DocumentsView: View {
     }()
     @State private var chunkFilter = ""
 
+    // Collection management state (Tasks 13.6, 13.7)
+    @State private var showNewCollectionSheet = false
+    @State private var newCollectionName = ""
+    @State private var collectionToRename: Collection? = nil
+    @State private var renameText = ""
+    @State private var collectionToDelete: Collection? = nil
+    @State private var showDeleteCollectionConfirmation = false
+
     enum ChunkViewMode: String {
         case list, grid
     }
@@ -163,13 +171,99 @@ struct DocumentsView: View {
                 await viewModel.refreshChunkTree()
             }
             indexedDocuments = await viewModel.loadIndexedDocumentsFromDatabase()
+            await viewModel.loadCollections()
         }
         .onChange(of: viewModel.isIndexing) { _, isActive in
             if !isActive {
-                Task { indexedDocuments = await viewModel.loadIndexedDocumentsFromDatabase() }
+                Task {
+                    indexedDocuments = await viewModel.loadIndexedDocumentsFromDatabase()
+                    await viewModel.loadCollections()
+                }
             }
         }
         .onChange(of: selectedNodeID) { _, _ in chunkFilter = "" }
+        // New Collection sheet (Task 13.6)
+        .sheet(isPresented: $showNewCollectionSheet) {
+            NavigationStack {
+                Form {
+                    Section {
+                        TextField("Collection Name", text: $newCollectionName)
+                    } footer: {
+                        Text("Give this group of documents a meaningful name.")
+                    }
+                }
+                .navigationTitle("New Collection")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showNewCollectionSheet = false
+                            newCollectionName = ""
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Create") {
+                            let name = newCollectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !name.isEmpty else { return }
+                            Task {
+                                await viewModel.createCollection(name: name)
+                                showNewCollectionSheet = false
+                                newCollectionName = ""
+                            }
+                        }
+                        .disabled(newCollectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .frame(minWidth: 320, minHeight: 180)
+        }
+        // Rename Collection alert (Task 13.6)
+        .alert("Rename Collection", isPresented: .init(
+            get: { collectionToRename != nil },
+            set: { if !$0 { collectionToRename = nil } }
+        )) {
+            TextField("Name", text: $renameText)
+            Button("Rename") {
+                guard let c = collectionToRename else { return }
+                let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                Task {
+                    await viewModel.renameCollection(id: c.id, name: name)
+                    collectionToRename = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { collectionToRename = nil }
+        } message: {
+            if let c = collectionToRename {
+                Text("Enter a new name for \u{201C}\(c.name)\u{201D}.")
+            }
+        }
+        // Delete Collection confirmation (Task 13.6)
+        .confirmationDialog("Delete \u{201C}\(collectionToDelete?.name ?? "")\u{201D}?", isPresented: $showDeleteCollectionConfirmation, titleVisibility: .visible) {
+            Button("Delete Collection", role: .destructive) {
+                guard let c = collectionToDelete else { return }
+                Task {
+                    await viewModel.deleteCollection(id: c.id)
+                    collectionToDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { collectionToDelete = nil }
+        } message: {
+            Text("Documents in this collection will become Uncategorized.")
+        }
+        // Post-embed collection assignment sheet (Task 13.7)
+        .sheet(isPresented: $viewModel.showCollectionAssignmentSheet) {
+            CollectionAssignmentSheet(
+                documentCount: viewModel.lastEmbeddedDocumentIDs.count,
+                collections: viewModel.collections,
+                onAssign: { collectionId in
+                    Task { await viewModel.assignNewlyEmbeddedDocuments(to: collectionId) }
+                },
+                onSkip: {
+                    viewModel.lastEmbeddedDocumentIDs = []
+                    viewModel.showCollectionAssignmentSheet = false
+                }
+            )
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if viewModel.indexedFolder != nil {
                 Task { await viewModel.checkForModifiedChunkFiles() }
@@ -179,6 +273,88 @@ struct DocumentsView: View {
 
     private var shouldShowEmptyState: Bool {
         viewModel.chunkFileTree == nil && indexedDocuments.isEmpty && !viewModel.isIndexing
+    }
+
+    // MARK: - Collections Section (Tasks 13.6, 13.7)
+
+    private var collectionsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header row
+            HStack {
+                Label("Collections", systemImage: "folder.badge.gearshape")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    newCollectionName = ""
+                    showNewCollectionSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("New Collection")
+            }
+            .padding(.horizontal)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+
+            if viewModel.collections.isEmpty {
+                Text("No collections yet.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            } else {
+                ForEach(viewModel.collections) { collection in
+                    HStack(spacing: 10) {
+                        // Colored indicator dot
+                        Circle()
+                            .fill(colorFromHex(collection.color) ?? Color.accentColor.opacity(0.5))
+                            .frame(width: 8, height: 8)
+                        Text(collection.name)
+                            .font(.callout)
+                        Spacer()
+                        Text("\(collection.documentCount) doc\(collection.documentCount == 1 ? "" : "s")")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal)
+                    .contentShape(Rectangle())
+                    .contextMenu {
+                        Button {
+                            renameText = collection.name
+                            collectionToRename = collection
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            collectionToDelete = collection
+                            showDeleteCollectionConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+
+            Divider()
+                .padding(.top, 4)
+        }
+    }
+
+    /// Parses a CSS hex color string like `"#FF6B35"` or `"FF6B35"` into a SwiftUI `Color`.
+    private func colorFromHex(_ hex: String?) -> Color? {
+        guard let hex else { return nil }
+        let h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard h.count == 6, let value = UInt64(h, radix: 16) else { return nil }
+        return Color(
+            red:   Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8)  & 0xFF) / 255,
+            blue:  Double(value         & 0xFF) / 255
+        )
     }
 
     // MARK: - Empty State
@@ -257,6 +433,8 @@ struct DocumentsView: View {
                 .padding(.horizontal)
             }
 
+            collectionsSection
+
             if let tree = viewModel.chunkFileTree {
                 NavigationSplitView {
                     chunkTreeSidebar(tree: tree)
@@ -285,6 +463,22 @@ struct DocumentsView: View {
                     }
                     .padding(.vertical, 4)
                     .contextMenu {
+                        if !viewModel.collections.isEmpty {
+                            Menu {
+                                Button("Uncategorized") {
+                                    Task { await viewModel.assignDocumentToCollection(documentId: doc.id, collectionId: nil) }
+                                }
+                                Divider()
+                                ForEach(viewModel.collections) { collection in
+                                    Button(collection.name) {
+                                        Task { await viewModel.assignDocumentToCollection(documentId: doc.id, collectionId: collection.id) }
+                                    }
+                                }
+                            } label: {
+                                Label("Move to Collection", systemImage: "folder")
+                            }
+                            Divider()
+                        }
                         Button(role: .destructive) {
                             documentToDelete = doc
                         } label: {
@@ -632,5 +826,50 @@ struct DocumentsView: View {
     /// Re-selects a folder via NSOpenPanel to restore access (creates new bookmark).
     private func reselectFolder(_ folder: IndexedFolder) async {
         await viewModel.reprocessFolder(folder)
+    }
+}
+
+// MARK: - Collection Assignment Sheet (Task 13.7)
+
+/// Presented after embedding completes to let the user bulk-assign newly indexed
+/// documents to a collection. Skipping leaves them uncategorized.
+private struct CollectionAssignmentSheet: View {
+    let documentCount: Int
+    let collections: [Collection]
+    let onAssign: (String?) -> Void
+    let onSkip: () -> Void
+
+    @State private var selectedCollectionId: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Assign to Collection?")
+                    .font(.headline)
+                Text("\(documentCount) document\(documentCount == 1 ? "" : "s") were indexed. Assign them to a collection to scope chat searches.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Collection", selection: $selectedCollectionId) {
+                Text("Uncategorized").tag(String?.none)
+                Divider()
+                ForEach(collections) { collection in
+                    Text(collection.name).tag(Optional(collection.id))
+                }
+            }
+            .pickerStyle(.radioGroup)
+
+            HStack {
+                Button("Skip") { onSkip() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Assign") { onAssign(selectedCollectionId) }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 360, idealWidth: 400, minHeight: 220)
     }
 }

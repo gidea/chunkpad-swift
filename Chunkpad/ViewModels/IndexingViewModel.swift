@@ -44,6 +44,15 @@ final class IndexingViewModel {
     /// Whether the chunk preview sheet is visible.
     var showChunkPreview = false
 
+    // MARK: - Collection State (Task 13.6 / 13.7)
+    /// Available collections — loaded from DB and refreshed after CRUD operations.
+    var collections: [Collection] = []
+    /// Set to true after embedding completes, to prompt the user to assign newly
+    /// indexed documents to a collection. Only set when collections exist.
+    var showCollectionAssignmentSheet = false
+    /// Source paths of the most recently embedded documents, used for bulk assignment.
+    var lastEmbeddedDocumentIDs: [String] = []
+
     // MARK: - Parse-Failed Files (6.3.4)
 
     /// Files that failed to parse during the most recent processDirectory call,
@@ -324,6 +333,11 @@ final class IndexingViewModel {
                 progress = Double(processedFiles) / Double(totalFiles)
             }
             currentDocument = "Done! Embedded \(toEmbed.count) chunks."
+            // Track embedded document IDs for optional collection assignment (Task 13.7)
+            lastEmbeddedDocumentIDs = Array(bySource.keys)
+            if !collections.isEmpty {
+                showCollectionAssignmentSheet = true
+            }
             if let appState { appState.indexedDocumentCount = (try? await database.documentCount()) ?? appState.indexedDocumentCount }
         } catch {
             self.error = error.localizedDescription
@@ -331,6 +345,90 @@ final class IndexingViewModel {
             isDownloadingModel = false
         }
         isIndexing = false
+    }
+
+    // MARK: - Collection CRUD (Task 13.6)
+
+    /// Loads (or refreshes) the collections list from the database.
+    func loadCollections() async {
+        do {
+            try await ensureDatabaseConnected()
+            collections = try await database.fetchCollections()
+        } catch {
+            // Non-fatal — collection list stays as-is
+        }
+    }
+
+    /// Creates a new named collection and appends it to the local list.
+    func createCollection(name: String, color: String? = nil) async {
+        do {
+            try await ensureDatabaseConnected()
+            let collection = try await database.createCollection(name: name, color: color)
+            collections.append(collection)
+            collections.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch {
+            self.error = "Failed to create collection: \(error.localizedDescription)"
+        }
+    }
+
+    /// Renames a collection and updates the local list.
+    func renameCollection(id: String, name: String) async {
+        do {
+            try await ensureDatabaseConnected()
+            try await database.renameCollection(id: id, name: name)
+            if let i = collections.firstIndex(where: { $0.id == id }) {
+                let old = collections[i]
+                collections[i] = Collection(id: id, name: name, createdAt: old.createdAt, color: old.color, documentCount: old.documentCount)
+            }
+            collections.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch {
+            self.error = "Failed to rename collection: \(error.localizedDescription)"
+        }
+    }
+
+    /// Deletes a collection and removes it from the local list.
+    /// Documents in the collection become uncategorized (collection_id = NULL).
+    func deleteCollection(id: String) async {
+        do {
+            try await ensureDatabaseConnected()
+            try await database.deleteCollection(id: id)
+            collections.removeAll { $0.id == id }
+        } catch {
+            self.error = "Failed to delete collection: \(error.localizedDescription)"
+        }
+    }
+
+    /// Moves a document to a collection, or uncategorizes it when `collectionId` is nil.
+    /// Refreshes the collection list so document counts stay accurate.
+    func assignDocumentToCollection(documentId: String, collectionId: String?) async {
+        do {
+            try await ensureDatabaseConnected()
+            try await database.assignDocumentToCollection(documentId: documentId, collectionId: collectionId)
+            await loadCollections()
+        } catch {
+            self.error = "Failed to move document: \(error.localizedDescription)"
+        }
+    }
+
+    /// Bulk-assigns all documents from the last embedding run to a collection.
+    /// Pass nil to leave them uncategorized. Clears the sheet state when done.
+    func assignNewlyEmbeddedDocuments(to collectionId: String?) async {
+        let ids = lastEmbeddedDocumentIDs
+        guard !ids.isEmpty else {
+            showCollectionAssignmentSheet = false
+            return
+        }
+        do {
+            try await ensureDatabaseConnected()
+            for docId in ids {
+                try await database.assignDocumentToCollection(documentId: docId, collectionId: collectionId)
+            }
+            await loadCollections()
+        } catch {
+            self.error = "Failed to assign documents: \(error.localizedDescription)"
+        }
+        lastEmbeddedDocumentIDs = []
+        showCollectionAssignmentSheet = false
     }
 
     func refreshChunkTree() async {

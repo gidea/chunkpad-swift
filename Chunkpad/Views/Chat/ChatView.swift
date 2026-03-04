@@ -24,7 +24,13 @@ struct ChatView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                generationModePicker
+                HStack(spacing: 12) {
+                    generationModePicker
+                    // Task 13.5: Only show scope picker when collections exist
+                    if !viewModel.collections.isEmpty {
+                        collectionScopePicker
+                    }
+                }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -35,6 +41,13 @@ struct ChatView: View {
             }
         }
         .navigationTitle("Chat")
+        // Task 13.5: Load collections for scope picker and persist scope changes
+        .task {
+            await viewModel.refreshCollections()
+        }
+        .onChange(of: appState.selectedCollectionId) {
+            appState.saveToUserProfile()
+        }
         // Llama download offer dialog
         .alert("No LLM Provider Configured", isPresented: $viewModel.showLlamaOffer) {
             Button("Download Llama") {
@@ -413,6 +426,28 @@ struct ChatView: View {
         }
         .pickerStyle(.menu)
         .frame(maxWidth: 220)
+    }
+
+    // MARK: - Collection Scope Picker (Task 13.5)
+
+    /// Lets the user scope hybrid search to a single collection or all documents.
+    /// Hidden when no collections exist (no clutter for users who don't use collections).
+    private var collectionScopePicker: some View {
+        @Bindable var appState = appState
+        return Picker("Scope", selection: $appState.selectedCollectionId) {
+            Label("All Documents", systemImage: "tray.2")
+                .tag(Optional<String>.none)
+            Divider()
+            ForEach(viewModel.collections) { collection in
+                Label(collection.name, systemImage: "folder.fill")
+                    .tag(Optional(collection.id))
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: 180)
+        .help(appState.selectedCollectionId == nil
+              ? "Search scope: All Documents"
+              : "Search scope: \(viewModel.collections.first { $0.id == appState.selectedCollectionId }?.name ?? "Collection")")
     }
 
     /// 7.5: Check if a generation mode has a valid configuration.
