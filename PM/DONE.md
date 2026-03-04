@@ -286,13 +286,12 @@ Chunk display is a plain list only. No view mode toggle, no grid cards, no filte
 ### 5.2 API key validation ("Test" button) [P2] ✅
 - [x] "Test API Key" button for Anthropic (POST `/v1/messages` with `max_tokens: 1`)
 - [x] "Test API Key" button for OpenAI (GET `/v1/models`)
-- [x] "Test Connection" button for Ollama (GET `{endpoint}/api/tags` with 5s timeout)
 - [x] Inline spinner/checkmark/error indicators; validation resets on key change
 
 ### 5.3 Configurable LLM parameters [P2] ✅
 - [x] `llmTemperature: Double` (default 0.7) and `llmMaxTokens: Int` (default 4096) in AppState
 - [x] `temperature` and `maxTokens` added to `CloudConfig` and `LocalConfig`
-- [x] Threaded through `LLMServiceFactory` to all 4 clients (Anthropic, OpenAI, Ollama, BundledLLM)
+- [x] Threaded through `LLMServiceFactory` to all 3 clients (Anthropic, OpenAI, BundledLLM)
 - [x] "LLM Parameters" section in SettingsView: Slider for temperature, TextField for max tokens
 
 ### 7.1 Markdown rendering for assistant responses [P2] ✅

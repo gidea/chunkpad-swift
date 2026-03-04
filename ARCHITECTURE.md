@@ -15,7 +15,7 @@ Chunkpad is a native macOS app that turns your local documents into a searchable
 - **On-device embeddings** -- MLX Swift running BAAI/bge-base-en-v1.5 on Apple Silicon. Documents never leave your Mac during indexing.
 - **Two-step indexing** -- Documents are processed in two explicit steps: (1) parse and chunk into editable markdown files on disk, (2) review and embed into the vector database. This gives users full control over what gets indexed.
 - **Lazy model downloads** -- Neither the embedding model nor the local LLM is bundled with the app. The embedding model (~438 MB) is downloaded from HuggingFace only when the user clicks "Embed Selected" (Step 2 of indexing). Llama 3.2 (~1.7 GB) is downloaded only when the user explicitly accepts the offer (no cloud API key configured). If you just want the UI, no downloads happen.
-- **Flexible generation** -- User chooses between cloud LLMs (Claude, ChatGPT), local LLMs (Ollama), or bundled Llama 3.2. Both cloud API keys can be configured simultaneously for easy switching. If no API key is set, the app offers to download Llama for free local generation. User is always in control.
+- **Flexible generation** -- User chooses between cloud LLMs (Claude, ChatGPT) or the bundled Llama 3.2 running on-device via MLX. Both cloud API keys can be configured simultaneously for easy switching. If no API key is set, the app offers to download Llama for free local generation. User is always in control.
 - **Liquid Glass UI** -- macOS 26 native design with `.glassEffect()` throughout. Design values (corner radii, spacing, padding) are centralized in `GlassTokens` to maintain accessibility control, since Liquid Glass has known legibility and contrast issues in its initial release. Reusable glass components (`GlassCard`, `GlassIconButton`, `GlassPill`) keep styling consistent.
 
 ---
@@ -38,17 +38,17 @@ The original plan called for local PostgreSQL + pgvector. We changed to SQLite +
 
 **Decision:** SQLite + sqlite-vec is the right choice for a single-user desktop app. No external dependencies, zero setup, and the database is a portable file.
 
-### Why MLX Swift (not Ollama for embeddings)
+### Why MLX Swift for embeddings and generation
 
-The original plan used Ollama's embedding API. We changed to MLX Swift because:
+MLX Swift handles both embeddings and local LLM generation (Llama 3.2). This avoids external dependencies like separate inference servers:
 
-| Factor | Ollama Embeddings | MLX Swift |
+| Factor | External Server | MLX Swift |
 |---|---|---|
-| **Dependency** | Requires Ollama running | None (framework in app) |
+| **Dependency** | Requires separate process running | None (framework in app) |
 | **Performance** | HTTP API overhead | Direct Metal GPU compute |
 | **Privacy** | Local but external process | In-process, fully sandboxed |
 | **Apple Silicon** | Generic (CPU or GPU) | Optimized for M-series chips |
-| **User setup** | Install Ollama + pull model | Automatic (model auto-downloads) |
+| **User setup** | Install server + pull model | Automatic (model auto-downloads) |
 
 **Decision:** MLX Swift provides the best UX -- zero setup, native Apple Silicon performance, and no external processes.
 
@@ -96,15 +96,15 @@ Users have different priorities:
 
 | Priority | Best Option |
 |---|---|
-| Maximum privacy | Local (Ollama or bundled Llama 3.2) |
+| Maximum privacy | Local (bundled Llama 3.2 via MLX) |
 | Best quality | Cloud (Claude or ChatGPT) |
 | Cost-sensitive | Local (free) |
 | Speed-sensitive | Cloud (fast) or Local (no network) |
 | Zero-config | Bundled Llama 3.2 (no external services) |
 
-**Decision:** Let the user choose. The `GenerationMode` enum provides three user-facing options in Settings: Anthropic, OpenAI, and Ollama. Both cloud API keys can be configured upfront so users can switch freely without re-entering credentials. When no API key is configured, the app offers to download Llama 3.2 for free local generation. The architecture is pluggable -- adding new providers is a single `LLMClient` protocol conformance.
+**Decision:** Let the user choose. The `GenerationMode` enum provides three user-facing options in Settings: Anthropic, OpenAI, and Llama (On-Device). Both cloud API keys can be configured upfront so users can switch freely without re-entering credentials. The bundled Llama 3.2 runs directly on Apple Silicon via MLX — no external server needed. The architecture is pluggable — adding new providers is a single `LLMClient` protocol conformance.
 
-**Separation of concerns:** The embedding model (bge-base-en-v1.5 via MLXEmbedders) is NEVER used for text generation. All generative LLMs (Claude, ChatGPT, Ollama, Llama 3.2) are NEVER used for embeddings. These are completely separate models with separate download triggers and separate lifecycles.
+**Separation of concerns:** The embedding model (bge-large-en-v1.5 via MLXEmbedders) is NEVER used for text generation. All generative LLMs (Claude, ChatGPT, Llama 3.2) are NEVER used for embeddings. These are completely separate models with separate download triggers and separate lifecycles.
 
 ### Why Two-Step Indexing (Process → Review → Embed)
 
@@ -238,7 +238,7 @@ Chunk markdown files are stored at `{selectedFolder}/_chunks/` (inside the user-
 │  └────────────────────────────────────────────────────────┘     │
 │                                                                 │
 │  ┌─── Local ──────────────────────────────────────────────┐     │
-│  │  OllamaClient     → Ollama HTTP API (streaming)        │     │
+│  │  BundledLLMClient  → MLX on-device inference (streaming) │     │
 │  │  BundledLLMClient  → Llama 3.2 via MLX (streaming)     │     │
 │  └────────────────────────────────────────────────────────┘     │
 │                                                                 │
@@ -387,7 +387,7 @@ Subsequent calls to ensureModelReady() when .ready → instant no-op
 | **Embeddings** | MLXEmbedders (mlx-swift-lm) | On-device BERT on Apple Silicon |
 | **Embedding Model** | BAAI/bge-base-en-v1.5 | High-quality RAG embeddings |
 | **Cloud LLMs** | URLSession + SSE streaming | No SDK dependencies |
-| **Local LLMs** | Ollama HTTP API + MLXLLM (Llama 3.2) | Ollama user-installed; Llama downloaded on demand via MLX |
+| **Local LLMs** | MLXLLM (Llama 3.2) | Downloaded on demand via MLX, runs on Apple Silicon |
 | **PDF Parsing** | PDFKit | System framework |
 | **Rich Text** | textutil CLI | macOS built-in (DOCX/RTF/DOC/ODT) |
 | **Chunk Files** | ChunkFileService | Markdown files on disk for review/edit |
@@ -478,7 +478,7 @@ CREATE TABLE schema_version (
 enum GenerationMode: String, CaseIterable {
     case anthropic  // Cloud: Claude API (bring your own key)
     case openai     // Cloud: OpenAI API (bring your own key)
-    case ollama     // Local: Ollama HTTP API
+    case bundled    // Local: Llama 3.2 via MLX
     // Llama 3.2 is NOT in GenerationMode — it's offered automatically
     // when the user tries to chat without a cloud API key.
 }
@@ -494,7 +494,7 @@ enum LLMProvider {
 // Llama uses BundledLLMService (singleton) via BundledLLMClient.
 ```
 
-Cloud providers use streaming Server-Sent Events (SSE) via `URLSession`. Local providers use Ollama's streaming JSON API. All conform to the `LLMClient` protocol:
+Cloud providers use streaming Server-Sent Events (SSE) via `URLSession`. The local provider uses MLX Swift for on-device inference. All conform to the `LLMClient` protocol:
 
 ```swift
 protocol LLMClient {
@@ -545,7 +545,7 @@ protocol LLMClient {
 
 | LLM Choice | Search | Generation | Total |
 |---|---|---|---|
-| Local (Ollama Llama 3.3) | ~25ms | ~2-5s | ~2-5s |
+| Local (Llama 3.2 MLX) | ~25ms | ~2-5s | ~2-5s |
 | Local (Bundled Llama 3.2) | ~25ms | ~3-8s | ~3-8s |
 | Cloud (Claude) | ~25ms | ~500ms-2s | ~1-3s |
 | Cloud (ChatGPT) | ~25ms | ~1-3s | ~1-4s |

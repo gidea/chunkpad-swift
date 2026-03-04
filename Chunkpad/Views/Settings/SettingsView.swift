@@ -5,7 +5,6 @@ struct SettingsView: View {
 
     @State private var anthropicValidation: ValidationState = .idle
     @State private var openaiValidation: ValidationState = .idle
-    @State private var ollamaValidation: ValidationState = .idle
 
     // 5.4: Database management state
     @State private var dbFileSize: Int64?
@@ -33,8 +32,6 @@ struct SettingsView: View {
         .onChange(of: appState.openaiModel) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.anthropicAPIKey) { _, _ in appState.saveToUserProfile(); anthropicValidation = .idle }
         .onChange(of: appState.openaiAPIKey) { _, _ in appState.saveToUserProfile(); openaiValidation = .idle }
-        .onChange(of: appState.ollamaEndpoint) { _, _ in appState.saveToUserProfile(); ollamaValidation = .idle }
-        .onChange(of: appState.ollamaModel) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.contextSize) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkSizeTokens) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkOverlapTokens) { _, _ in appState.saveToUserProfile() }
@@ -421,22 +418,19 @@ struct SettingsView: View {
             }
         }
 
-        // Ollama-specific settings (only shown when Ollama is selected)
-        if appState.wrappedValue.generationMode == .ollama {
-            Section("Ollama Configuration") {
-                TextField("Endpoint", text: appState.ollamaEndpoint)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Model", text: appState.ollamaModel, prompt: Text("llama3.3"))
-                    .textFieldStyle(.roundedBorder)
-
-                HStack(spacing: 8) {
-                    Button("Test Connection") {
-                        Task { await testOllamaEndpoint() }
-                    }
-                    .controlSize(.small)
-                    .disabled(appState.wrappedValue.ollamaEndpoint.isEmpty || ollamaValidation == .testing)
-
-                    validationIndicator(state: ollamaValidation)
+        // Bundled Llama status (only shown when Llama is selected)
+        if appState.wrappedValue.generationMode == .bundled {
+            Section("Llama Status") {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(llamaStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text(appState.wrappedValue.bundledLLMStatus.displayText)
+                }
+                if !appState.wrappedValue.bundledLLMStatus.isReady {
+                    Text("Download Llama from the Llama (Local) section above to enable on-device generation.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -594,29 +588,6 @@ struct SettingsView: View {
         }
     }
 
-    private func testOllamaEndpoint() async {
-        ollamaValidation = .testing
-        do {
-            guard let url = URL(string: "\(appState.ollamaEndpoint)/api/tags") else {
-                ollamaValidation = .failure("Invalid URL")
-                return
-            }
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 5
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                ollamaValidation = .failure("No response")
-                return
-            }
-            if http.statusCode == 200 {
-                ollamaValidation = .success
-            } else {
-                ollamaValidation = .failure("HTTP \(http.statusCode)")
-            }
-        } catch {
-            ollamaValidation = .failure("Not reachable")
-        }
-    }
 }
 
 // MARK: - Validation State

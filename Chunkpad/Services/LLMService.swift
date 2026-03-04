@@ -34,14 +34,8 @@ enum LLMServiceFactory {
                                     temperature: config.temperature, maxTokens: config.maxTokens)
             }
         case .local(let config):
-            switch config.provider {
-            case .ollama:
-                return OllamaClient(endpoint: config.endpoint, model: config.modelName,
+            return BundledLLMClient(service: BundledLLMService.shared,
                                     temperature: config.temperature, maxTokens: config.maxTokens)
-            case .bundled:
-                return BundledLLMClient(service: BundledLLMService.shared,
-                                        temperature: config.temperature, maxTokens: config.maxTokens)
-            }
         }
     }
 }

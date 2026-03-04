@@ -405,7 +405,7 @@ struct ChatView: View {
         switch mode {
         case .anthropic: return !appState.anthropicAPIKey.isEmpty
         case .openai: return !appState.openaiAPIKey.isEmpty
-        case .ollama: return !appState.ollamaEndpoint.isEmpty
+        case .bundled: return appState.bundledLLMStatus.isReady
         }
     }
 
@@ -441,7 +441,7 @@ struct ChatView: View {
 
         inputText = ""
 
-        // 1. If a cloud/Ollama provider is configured, use it directly
+        // 1. If a cloud or bundled Llama provider is configured, use it directly
         if let provider = appState.resolvedProvider() {
             Task {
                 await viewModel.sendMessage(text, provider: provider)

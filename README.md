@@ -13,7 +13,7 @@ Chunkpad indexes your local documents (PDF, DOCX, TXT, Markdown, PPTX, RTF), gen
 - **Embedded database** -- SQLite + [sqlite-vec](https://github.com/asg017/sqlite-vec) for vector search + FTS5 for keyword search. No server to install.
 - **Hybrid search** -- Combines vector similarity (70%) and full-text matching (30%) with a relevance threshold. Irrelevant chunks are automatically filtered out.
 - **Transparent retrieval** -- Retrieved chunks are shown with relevance scores. Toggle individual chunks on/off and regenerate with your selection. Pin documents to always include them in context.
-- **Flexible LLM** -- Choose between cloud providers (Claude, ChatGPT), local models (Ollama), or the bundled Llama 3.2. Both cloud API keys can be configured upfront. If no API key is set, the app offers to download Llama 3.2 for free local generation.
+- **Flexible LLM** -- Choose between cloud providers (Claude, ChatGPT) or the bundled Llama 3.2 running on-device via MLX. Both cloud API keys can be configured upfront. If no API key is set, the app offers to download Llama 3.2 for free local generation.
 - **Liquid Glass UI** -- macOS 26 native design language with `.glassEffect()` throughout. Design values are centralized in `GlassTokens` for accessibility control, since Liquid Glass has known legibility and contrast issues in its initial release.
 - **Lazy model downloads** -- Neither the embedding model (~438 MB) nor the local LLM (~1.7 GB) is bundled with the app. The embedding model downloads only when you index documents. Llama 3.2 downloads only if you accept the offer. Cached locally for instant loads afterwards.
 
@@ -74,7 +74,6 @@ chunkpad-swift/
 │   │   ├── EmbeddingService.swift     # MLX embedding (bge-base-en-v1.5)
 │   │   ├── KeychainHelper.swift       # Keychain storage for API keys
 │   │   ├── LLMService.swift           # LLM client protocol & factory
-│   │   ├── OllamaClient.swift         # Ollama local LLM client
 │   │   └── OpenAIClient.swift         # OpenAI API client
 │   ├── ViewModels/
 │   │   ├── ChatViewModel.swift        # RAG pipeline orchestration
@@ -162,7 +161,7 @@ No other third-party dependencies. LLM clients use `URLSession` directly.
 |---|---|---|
 | Anthropic | Claude API | Enter API key in Settings |
 | OpenAI | ChatGPT API | Enter API key in Settings |
-| Ollama | Local via HTTP | Install Ollama, run a model |
+| Llama 3.2 (On-Device) | Local via MLX | Downloaded on demand, runs on Apple Silicon |
 | Llama 3.2 | Bundled via MLX | Accept download offer (~1.7 GB) |
 
 Both cloud API keys can be configured simultaneously in Settings, so you can switch between Claude and ChatGPT without re-entering credentials. If no API key is set, the app offers to download Llama 3.2 for free local generation.

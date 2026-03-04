@@ -101,28 +101,24 @@ struct LocalConfig: Sendable {
 }
 
 enum LocalProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case ollama
     case bundled
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .ollama: return "Ollama"
-        case .bundled: return "Bundled (llama.cpp)"
+        case .bundled: return "Llama (On-Device)"
         }
     }
 
     var defaultEndpoint: String {
         switch self {
-        case .ollama: return "http://localhost:11434"
         case .bundled: return ""
         }
     }
 
     var defaultModel: String {
         switch self {
-        case .ollama: return "llama3.3"
         case .bundled: return "llama-3.2-3b"
         }
     }
@@ -132,14 +128,10 @@ enum LocalProvider: String, Codable, CaseIterable, Identifiable, Sendable {
 
 /// Flat enum for SwiftUI picker binding.
 /// Maps to the richer `LLMProvider` type when constructing services.
-///
-/// Note: The bundled llama.cpp option is intentionally excluded here.
-/// It is reserved for internal text generation within the RAG pipeline
-/// and not exposed as a user-selectable chat model.
 enum GenerationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case anthropic
     case openai
-    case ollama
+    case bundled
 
     var id: String { rawValue }
 
@@ -147,7 +139,7 @@ enum GenerationMode: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .anthropic: return "Claude"
         case .openai: return "ChatGPT"
-        case .ollama: return "Ollama"
+        case .bundled: return "Llama (On-Device)"
         }
     }
 
@@ -155,7 +147,7 @@ enum GenerationMode: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .anthropic: return "cloud"
         case .openai: return "cloud.fill"
-        case .ollama: return "server.rack"
+        case .bundled: return "laptopcomputer"
         }
     }
 
@@ -163,14 +155,14 @@ enum GenerationMode: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .anthropic: return "Anthropic · Bring your own key"
         case .openai: return "OpenAI · Bring your own key"
-        case .ollama: return "Local · Free · Requires Ollama running"
+        case .bundled: return "Local · Free · Runs on Apple Silicon"
         }
     }
 
     var isLocal: Bool {
         switch self {
         case .anthropic, .openai: return false
-        case .ollama: return true
+        case .bundled: return true
         }
     }
 

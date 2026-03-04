@@ -39,7 +39,7 @@
 		D3D5C717F7A05E84A73C3D07 /* ChunkpadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F51C2CB36117BE12326326DD /* ChunkpadApp.swift */; };
 		D737AECC6230D515F407CA72 /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9B13927A9545D9F1B87342 /* GlassTokens.swift */; };
 		D7E400457DC38BCADCD6A647 /* IndexingProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */; };
-		D8D2F77EC5147C9A78C21091 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */; };
+
 		DFCE4EDB949252D97D69AD37 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 33F82CA7FBC8ABEBF8B09348 /* MLXEmbedders */; };
 		E6CFE0BDC50A42ED2745A6B3 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4533BE42750E1AB39C4DF0 /* KeychainHelper.swift */; };
 		E9AAFC0BD4F0E58AB0071C9D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E7984A1A2036F7B8DA721723 /* Assets.xcassets */; };
@@ -61,7 +61,7 @@
 		32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexingProgressView.swift; sourceTree = "<group>"; };
 		3665361D9D99A35F25D5FF1D /* IndexedFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexedFolder.swift; sourceTree = "<group>"; };
 		3704B6D627F53C260813845A /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
-		381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
+
 		3905AAD1C08F121C21AD3821 /* ChunkFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkFileService.swift; sourceTree = "<group>"; };
 		3D09376B06A823F9382D10A9 /* sqlite-vec.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "sqlite-vec.c"; sourceTree = "<group>"; };
 		4513FF8851EBE92D63669E5A /* GlassPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPill.swift; sourceTree = "<group>"; };
@@ -172,7 +172,7 @@
 				945988654CC4701EADA5B0C8 /* EmbeddingService.swift */,
 				5D4533BE42750E1AB39C4DF0 /* KeychainHelper.swift */,
 				55054113AD5B984E336F6013 /* LLMService.swift */,
-				381DC867A0E4330D22BA4AD6 /* OllamaClient.swift */,
+
 				AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */,
 			);
 			path = Services;
@@ -374,7 +374,7 @@
 				162BFB1F401973D6B5F472A5 /* MainView.swift in Sources */,
 				09A37CAE3717A5D0BA1807C2 /* Message.swift in Sources */,
 				51B63328B59ECC391EA15AD0 /* MessageBubble.swift in Sources */,
-				D8D2F77EC5147C9A78C21091 /* OllamaClient.swift in Sources */,
+
 				B52A8D6CEC28E6885CC337BF /* OpenAIClient.swift in Sources */,
 				31782F89B8691F9AC8DEBA77 /* PinDocumentsSheet.swift in Sources */,
 				88A6F038B4D1F6723AE95202 /* ScoredChunk.swift in Sources */,

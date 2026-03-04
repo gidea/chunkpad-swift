@@ -28,9 +28,6 @@ final class AppState {
     var openaiAPIKey: String = ""
     var openaiModel: String = CloudProvider.openai.defaultModel
 
-    // Local LLM settings (Ollama)
-    var ollamaEndpoint: String = "http://localhost:11434"
-    var ollamaModel: String = "llama3.3"
     var contextSize: Int = 4096
 
     // MARK: - Document Indexing (Chunking Strategy)
@@ -102,8 +99,6 @@ final class AppState {
         static let generationMode = "profile_generation_mode"
         static let anthropicModel = "profile_anthropic_model"
         static let openaiModel = "profile_openai_model"
-        static let ollamaEndpoint = "profile_ollama_endpoint"
-        static let ollamaModel = "profile_ollama_model"
         static let contextSize = "profile_context_size"
         static let chunkSizeTokens = "profile_chunk_size_tokens"
         static let chunkOverlapTokens = "profile_chunk_overlap_tokens"
@@ -125,8 +120,6 @@ final class AppState {
         }
         anthropicModel = Self.defaults.string(forKey: ProfileKey.anthropicModel) ?? CloudProvider.anthropic.defaultModel
         openaiModel = Self.defaults.string(forKey: ProfileKey.openaiModel) ?? CloudProvider.openai.defaultModel
-        ollamaEndpoint = Self.defaults.string(forKey: ProfileKey.ollamaEndpoint) ?? "http://localhost:11434"
-        ollamaModel = Self.defaults.string(forKey: ProfileKey.ollamaModel) ?? "llama3.3"
         contextSize = Self.defaults.object(forKey: ProfileKey.contextSize) as? Int ?? 4096
         chunkSizeTokens = Self.defaults.object(forKey: ProfileKey.chunkSizeTokens) as? Int ?? EmbeddingService.maxTokenWindow
         chunkOverlapTokens = Self.defaults.object(forKey: ProfileKey.chunkOverlapTokens) as? Int ?? 100
@@ -146,8 +139,6 @@ final class AppState {
         Self.defaults.set(generationMode.rawValue, forKey: ProfileKey.generationMode)
         Self.defaults.set(anthropicModel, forKey: ProfileKey.anthropicModel)
         Self.defaults.set(openaiModel, forKey: ProfileKey.openaiModel)
-        Self.defaults.set(ollamaEndpoint, forKey: ProfileKey.ollamaEndpoint)
-        Self.defaults.set(ollamaModel, forKey: ProfileKey.ollamaModel)
         Self.defaults.set(contextSize, forKey: ProfileKey.contextSize)
         Self.defaults.set(chunkSizeTokens, forKey: ProfileKey.chunkSizeTokens)
         Self.defaults.set(chunkOverlapTokens, forKey: ProfileKey.chunkOverlapTokens)
@@ -185,15 +176,9 @@ final class AppState {
             guard !openaiAPIKey.isEmpty else { return nil }
             return .cloud(CloudConfig(provider: .openai, apiKey: openaiAPIKey, model: openaiModel,
                                       temperature: llmTemperature, maxTokens: llmMaxTokens))
-        case .ollama:
-            return .local(LocalConfig(
-                provider: .ollama,
-                endpoint: ollamaEndpoint,
-                modelName: ollamaModel,
-                contextSize: contextSize,
-                temperature: llmTemperature,
-                maxTokens: llmMaxTokens
-            ))
+        case .bundled:
+            guard bundledLLMStatus.isReady else { return nil }
+            return .local(LocalConfig(provider: .bundled, temperature: llmTemperature, maxTokens: llmMaxTokens))
         }
     }
 
