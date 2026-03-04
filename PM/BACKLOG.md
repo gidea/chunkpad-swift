@@ -208,4 +208,100 @@ Today the user types a question and presses Enter — then the RAG pipeline runs
 
 ---
 
+## Epic 15: Turn Chat Into Asset
+
+> **Goal:** Transform any chat response from disposable conversation into a reusable knowledge artifact — exportable as a document and indexable back into the knowledge base for future retrieval.
+
+### Problem
+
+Today, chat responses are trapped inside the conversation database. A user who drafts a proposal, summarizes a document set, or builds a comparison table in chat has no way to extract that work as a standalone file. The output dies in the conversation list. Worse, that generated knowledge can never feed back into future queries — the user's own synthesized insights are invisible to the RAG pipeline.
+
+This creates a one-way flow: documents → chunks → answers → nowhere. Turning chat into an asset closes the loop: documents → chunks → answers → new documents → richer future answers.
+
+### Inspiration
+
+- **ChatGPT "Save as"** — export conversations to markdown/PDF
+- **Notion AI** — AI-generated content becomes part of the workspace, queryable alongside other pages
+- **Knowledge management flywheel** — outputs become inputs for future queries
+
+### User Stories
+
+1. As a user, I want to copy a single assistant response as clean markdown to my clipboard so I can paste it into an email or document.
+2. As a user, I want to export an entire conversation as a markdown file so I have a standalone record of the Q&A session.
+3. As a user, I want to export a conversation as a .docx file so I can share it with colleagues who use Word.
+4. As a user, I want to save an assistant response directly into my indexed knowledge base so future searches can find and reference it.
+5. As a user, I want to see which chat exports are already indexed so I know my knowledge base is growing from my own work.
+
+### Design Decisions
+
+- **Three export targets**: clipboard (instant), file (markdown or docx), and knowledge base (re-index).
+- **Single-message and full-conversation exports** are both supported. Single-message is the common case (copy one good answer); full-conversation is for archival.
+- **Re-indexing into the knowledge base** writes a markdown file to a designated exports folder, then processes and embeds it through the existing indexing pipeline. This reuses `DocumentProcessor` and `IndexingViewModel` — no new indexing code needed.
+- **Markdown is the canonical format** since assistant responses are already stored as markdown in `message.content` and rendered via `MarkdownContentView`. Export is essentially writing the raw content to a file.
+- **DOCX conversion** uses macOS `textutil` (the same tool `DocumentProcessor` already uses for import, but in reverse — markdown → HTML → DOCX).
+- **Provenance metadata** (conversation title, date, source chunks) is included as frontmatter or a header section in exports so the origin is traceable.
+
+### Tasks
+
+#### 15.1 Copy single message to clipboard [P0]
+- Add context menu "Copy as Markdown" on assistant message bubbles (`MessageBubble`)
+- Use `NSPasteboard.general` to copy `message.content` as both plain text and markdown
+- Also add "Copy as Plain Text" option that strips markdown formatting
+- Visual confirmation: brief "Copied" toast or checkmark animation
+
+#### 15.2 Copy full conversation to clipboard [P1]
+- Add toolbar button or menu item "Copy Conversation" in ChatView
+- Format: sequential messages with role headers (`## You`, `## Assistant`) and timestamps
+- Include conversation title and date as a header
+- Exclude system messages (internal RAG context)
+
+#### 15.3 Export conversation as markdown file [P0]
+- Add "Export as Markdown…" menu item or toolbar button in ChatView
+- Use `NSSavePanel` for user-selected save location (default filename: `{conversation-title}.md`)
+- Format: YAML frontmatter (`title`, `date`, `model`, `chunk_count`) followed by message content
+- Include a "Sources" section at the end listing referenced chunk IDs and source document paths
+- Handle conversations with no title gracefully (use date-based fallback name)
+
+#### 15.4 Export conversation as .docx [P2]
+- Add "Export as Word Document…" option alongside markdown export
+- Pipeline: render conversation as markdown → convert to HTML → use `textutil -convert docx` (same tool used by `DocumentProcessor` for import)
+- Include basic formatting: headings for role labels, monospace for code blocks
+- `NSSavePanel` with `.docx` default extension
+
+#### 15.5 Save response to knowledge base [P1]
+- Add context menu "Save to Knowledge Base" on assistant message bubbles
+- Create a designated exports folder: `~/Library/Application Support/Chunkpad/exports/`
+- Write the response as `{conversation-title}-{timestamp}.md` with metadata header
+- Metadata header includes: conversation title, date, query that produced it, source chunk IDs
+- Run through existing `DocumentProcessor.processFile()` → `DatabaseService.insertDocumentWithChunks()` → `EmbeddingService.embed()` pipeline
+- Show progress indicator during embedding (reuse existing embedding progress UI)
+- On success: show confirmation with link to view in Documents tab
+
+#### 15.6 Save full conversation to knowledge base [P2]
+- Same as 15.5 but exports all messages (user questions + assistant responses)
+- Format: each Q&A pair as a section with heading (`## Question: {first line}`)
+- Chunking naturally splits by Q&A sections (existing section-aware chunking handles `##` headings)
+- User can review chunks before embedding (existing two-step pipeline)
+
+#### 15.7 Export indicators and management [P2]
+- Track exported/saved-to-KB conversations with a marker in the conversation sidebar (e.g. small document icon or "Indexed" badge)
+- Store export state in conversation metadata (new column `exported_at TEXT` in conversations table, or a separate `conversation_exports` table)
+- Prevent duplicate re-indexing: warn if the same conversation was already saved to KB
+- Show "View in Documents" link when a conversation has been indexed
+
+#### 15.8 Batch export [P3]
+- Multi-select conversations in the sidebar for bulk export
+- "Export Selected as Markdown" writes individual `.md` files or a single combined file
+- "Save Selected to Knowledge Base" processes all selected conversations through the indexing pipeline
+- Progress bar for multi-conversation operations
+
+#### 15.9 Export settings [P3]
+- Settings section: "Exports"
+- Configurable exports folder path (default: `~/Library/Application Support/Chunkpad/exports/`)
+- Toggle: include source chunk references in exports (default: on)
+- Toggle: include timestamps in exports (default: on)
+- Toggle: auto-assign exports to a collection (depends on Epic 13)
+
+---
+
 *Add new epics below as they are identified.*
