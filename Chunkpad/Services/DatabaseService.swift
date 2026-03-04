@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import CSQLiteVec
+import CommonCrypto
 
 // MARK: - Database Errors
 
@@ -27,7 +28,7 @@ enum DatabaseError: LocalizedError, Sendable {
 actor DatabaseService {
 
     /// Current schema version. Bump when adding migrations.
-    static let currentSchemaVersion = 10
+    static let currentSchemaVersion = 11
 
     // nonisolated(unsafe) because deinit needs access and OpaquePointer is not Sendable.
     // Thread safety is guaranteed by the actor isolation — deinit only runs after
@@ -283,6 +284,37 @@ actor DatabaseService {
                 """)
                 // Clear embedded_chunk_refs since all embeddings are now invalid
                 try execute("DELETE FROM embedded_chunk_refs")
+            case 11:
+                // Add document collections support and chunk feedback loop.
+                // Collections table — lightweight labels for grouping documents.
+                try execute("""
+                    CREATE TABLE IF NOT EXISTS collections (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL,
+                        color TEXT
+                    )
+                """)
+                // Assign documents to collections (nullable — NULL = uncategorized).
+                try execute("ALTER TABLE documents ADD COLUMN collection_id TEXT REFERENCES collections(id)")
+                try execute("CREATE INDEX IF NOT EXISTS idx_documents_collection_id ON documents(collection_id)")
+                // Persistent hide/boost feedback per chunk.
+                // keyed on (source_path, title_hash) so feedback survives re-indexing.
+                try execute("""
+                    CREATE TABLE IF NOT EXISTS chunk_feedback (
+                        id TEXT PRIMARY KEY,
+                        chunk_id TEXT NOT NULL,
+                        source_path TEXT NOT NULL,
+                        title_hash TEXT NOT NULL,
+                        feedback_type TEXT NOT NULL DEFAULT 'neutral'
+                            CHECK(feedback_type IN ('boost', 'hide', 'neutral')),
+                        multiplier REAL NOT NULL DEFAULT 1.0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                try execute("CREATE INDEX IF NOT EXISTS idx_chunk_feedback_chunk_id ON chunk_feedback(chunk_id)")
+                try execute("CREATE INDEX IF NOT EXISTS idx_chunk_feedback_source_title ON chunk_feedback(source_path, title_hash)")
             default:
                 break
             }
@@ -372,6 +404,8 @@ actor DatabaseService {
 
     func deleteDocument(id: String) throws {
         try performTransaction {
+            try execute("DELETE FROM chunk_feedback WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)",
+                         bindings: [.text(id)])
             try execute("DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)",
                          bindings: [.text(id)])
             try execute("DELETE FROM chunks WHERE document_id = ?", bindings: [.text(id)])
@@ -381,6 +415,7 @@ actor DatabaseService {
 
     func deleteChunk(id: String) throws {
         try performTransaction {
+            try execute("DELETE FROM chunk_feedback WHERE chunk_id = ?", bindings: [.text(id)])
             try execute("DELETE FROM vec_chunks WHERE chunk_id = ?", bindings: [.text(id)])
             try execute("DELETE FROM embedded_chunk_refs WHERE chunk_ref_id = ?", bindings: [.text(id)])
             try execute("DELETE FROM chunks WHERE id = ?", bindings: [.text(id)])
@@ -452,6 +487,8 @@ actor DatabaseService {
             ) { stmt in columnText(stmt, 0) }
 
             for docID in docIDs {
+                try execute("DELETE FROM chunk_feedback WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)",
+                             bindings: [.text(docID)])
                 try execute("DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)",
                              bindings: [.text(docID)])
                 try execute("DELETE FROM chunks WHERE document_id = ?", bindings: [.text(docID)])
@@ -469,9 +506,11 @@ actor DatabaseService {
     /// Deletes all data from all tables. Used for "Clear All Data" action.
     func deleteAllData() throws {
         try performTransaction {
+            try execute("DELETE FROM chunk_feedback")
             try execute("DELETE FROM vec_chunks")
             try execute("DELETE FROM chunks")
             try execute("DELETE FROM documents")
+            try execute("DELETE FROM collections")
             try execute("DELETE FROM embedded_chunk_refs")
             try execute("DELETE FROM indexed_folders")
         }
@@ -652,23 +691,46 @@ actor DatabaseService {
     }
 
     /// Full-text search using FTS5.
-    func fullTextSearch(query: String, limit: Int = 20) throws -> [(chunkID: String, rank: Double)] {
-        let sql = """
-            SELECT c.id, chunks_fts.rank
-            FROM chunks_fts
-            JOIN chunks c ON c.rowid = chunks_fts.rowid
-            WHERE chunks_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-        """
-        return try self.query(sql, bindings: [.text(query), .int(Int64(limit))]) { stmt in
+    /// - Parameters:
+    ///   - query: The FTS5 match expression.
+    ///   - limit: Maximum results to return.
+    ///   - collectionId: If provided, restricts results to chunks whose document belongs
+    ///                   to this collection. `nil` searches across all documents.
+    func fullTextSearch(query: String, limit: Int = 20, collectionId: String? = nil) throws -> [(chunkID: String, rank: Double)] {
+        let sql: String
+        let bindings: [SQLiteBinding]
+
+        if let collectionId {
+            sql = """
+                SELECT c.id, chunks_fts.rank
+                FROM chunks_fts
+                JOIN chunks c ON c.rowid = chunks_fts.rowid
+                JOIN documents d ON d.id = c.document_id
+                WHERE chunks_fts MATCH ?
+                  AND d.collection_id = ?
+                ORDER BY rank
+                LIMIT ?
+            """
+            bindings = [.text(query), .text(collectionId), .int(Int64(limit))]
+        } else {
+            sql = """
+                SELECT c.id, chunks_fts.rank
+                FROM chunks_fts
+                JOIN chunks c ON c.rowid = chunks_fts.rowid
+                WHERE chunks_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+            """
+            bindings = [.text(query), .int(Int64(limit))]
+        }
+
+        return try self.query(sql, bindings: bindings) { stmt in
             (columnText(stmt, 0), sqlite3_column_double(stmt, 1))
         }
     }
 
-    /// Hybrid search: combine vector KNN + FTS5 results.
-    /// Vector similarity weighted at 70%, keyword relevance at 30%.
-    /// Hybrid search combining vector KNN (70 %) and FTS5 keyword match (30 %).
+    /// Hybrid search: vector KNN (70 %) + FTS5 keyword match (30 %), with optional
+    /// collection scoping and persistent feedback multipliers.
     ///
     /// Returns `ScoredChunk` values so the UI can display relevance and let
     /// users toggle individual chunks on/off before sending context to the LLM.
@@ -679,12 +741,14 @@ actor DatabaseService {
     ///   - k: Maximum number of results to return.
     ///   - minScore: Minimum combined score (0–1). Chunks below this are discarded
     ///               so irrelevant results never reach the LLM. Default 0.1.
-    func hybridSearch(queryEmbedding: [Float], queryText: String, k: Int = 10, minScore: Double = 0.1) throws -> [ScoredChunk] {
-        // 1. Vector search (top 2k candidates)
+    ///   - collectionId: If provided, restricts results to chunks whose document belongs
+    ///                   to this collection. `nil` searches the entire knowledge base.
+    func hybridSearch(queryEmbedding: [Float], queryText: String, k: Int = 10, minScore: Double = 0.1, collectionId: String? = nil) throws -> [ScoredChunk] {
+        // 1. Vector search (top 2k candidates — collection filter applied in Step 5 fetch)
         let vectorResults = try vectorSearch(queryEmbedding: queryEmbedding, k: k * 2)
 
-        // 2. Full-text search (top 2k candidates)
-        let ftsResults = try fullTextSearch(query: queryText, limit: k * 2)
+        // 2. Full-text search (top 2k candidates — collection filtered via JOIN on documents)
+        let ftsResults = try fullTextSearch(query: queryText, limit: k * 2, collectionId: collectionId)
 
         // 3. Merge scores — normalize and combine
         var scores: [String: Double] = [:]
@@ -709,6 +773,15 @@ actor DatabaseService {
             scores[result.chunkID, default: 0] += relevance * 0.3
         }
 
+        // 3.5. Apply feedback multipliers (Task 16.2)
+        // Batch-load all feedback records for scored chunk IDs, then apply each multiplier.
+        // boost (1.5×, capped at 1.0) surfaces persistently valuable chunks;
+        // hide (0.5×) dampens noisy ones while keeping them retrievable when highly relevant.
+        let feedbackMap = try getChunkFeedback(chunkIds: Array(scores.keys))
+        for (id, feedback) in feedbackMap {
+            scores[id] = min(1.0, (scores[id] ?? 0) * feedback.multiplier)
+        }
+
         // 4. Filter by minimum score, sort by combined score, take top k
         let topEntries = scores
             .filter { $0.value >= minScore }
@@ -717,10 +790,34 @@ actor DatabaseService {
         let topIDs = topEntries.map(\.key)
         let scoreMap = Dictionary(uniqueKeysWithValues: topEntries.map { ($0.key, $0.value) })
 
-        // 5. Fetch full chunk data
+        // 5. Fetch full chunk data, joined to documents + collections for collectionName.
+        //    When collectionId is specified, also filter to that collection only
+        //    (catching any vector candidates from outside the collection).
         guard !topIDs.isEmpty else { return [] }
         let placeholders = topIDs.map { _ in "?" }.joined(separator: ", ")
-        let sql = "SELECT id, title, summary, content, document_type, slide_number, source_path, created_at FROM chunks WHERE id IN (\(placeholders))"
+        var bindings: [SQLiteBinding] = topIDs.map { .text($0) }
+        let sql: String
+        if let collectionId {
+            sql = """
+                SELECT c.id, c.title, c.summary, c.content, c.document_type, c.slide_number,
+                       c.source_path, c.created_at, col.name AS collection_name
+                FROM chunks c
+                LEFT JOIN documents d ON d.id = c.document_id
+                LEFT JOIN collections col ON col.id = d.collection_id
+                WHERE c.id IN (\(placeholders))
+                  AND d.collection_id = ?
+            """
+            bindings.append(.text(collectionId))
+        } else {
+            sql = """
+                SELECT c.id, c.title, c.summary, c.content, c.document_type, c.slide_number,
+                       c.source_path, c.created_at, col.name AS collection_name
+                FROM chunks c
+                LEFT JOIN documents d ON d.id = c.document_id
+                LEFT JOIN collections col ON col.id = d.collection_id
+                WHERE c.id IN (\(placeholders))
+            """
+        }
 
         guard let db else { throw DatabaseError.connectionFailed("No connection") }
 
@@ -730,14 +827,15 @@ actor DatabaseService {
             throw DatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
 
-        for (i, id) in topIDs.enumerated() {
-            sqlite3_bind_text(stmt, Int32(i + 1), id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        for (i, binding) in bindings.enumerated() {
+            bind(stmt: stmt!, index: Int32(i + 1), value: binding)
         }
 
         var scoredChunks: [ScoredChunk] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
+            let chunkId = columnText(stmt!, 0)
             let chunk = Chunk(
-                id: columnText(stmt!, 0),
+                id: chunkId,
                 title: columnText(stmt!, 1),
                 summary: columnTextOptional(stmt!, 2),
                 content: columnText(stmt!, 3),
@@ -746,8 +844,14 @@ actor DatabaseService {
                 sourcePath: columnText(stmt!, 6),
                 createdAt: dateFormatter.date(from: columnText(stmt!, 7)) ?? .now
             )
-            let score = scoreMap[chunk.id] ?? 0
-            scoredChunks.append(ScoredChunk(chunk: chunk, relevanceScore: score))
+            let score = scoreMap[chunkId] ?? 0
+            let collectionName: String? = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? columnText(stmt!, 8) : nil
+            scoredChunks.append(ScoredChunk(
+                chunk: chunk,
+                relevanceScore: score,
+                collectionName: collectionName,
+                feedbackType: feedbackMap[chunkId]?.type
+            ))
         }
 
         // Re-sort by combined score (highest first)
@@ -814,6 +918,199 @@ actor DatabaseService {
         return chunks
     }
 
+    // MARK: - Collection CRUD
+
+    /// Creates a new named collection and returns the populated struct.
+    @discardableResult
+    func createCollection(name: String, color: String? = nil) throws -> Collection {
+        let id = UUID().uuidString
+        let now = dateFormatter.string(from: Date())
+        try execute("""
+            INSERT INTO collections (id, name, created_at, color)
+            VALUES (?, ?, ?, ?)
+        """, bindings: [
+            .text(id),
+            .text(name),
+            .text(now),
+            color.map { .text($0) } ?? .null,
+        ])
+        return Collection(id: id, name: name, createdAt: Date(), color: color, documentCount: 0)
+    }
+
+    /// Returns all collections ordered by name, each with its document count.
+    func fetchCollections() throws -> [Collection] {
+        let sql = """
+            SELECT c.id, c.name, c.created_at, c.color,
+                   COUNT(d.id) AS doc_count
+            FROM collections c
+            LEFT JOIN documents d ON d.collection_id = c.id
+            GROUP BY c.id
+            ORDER BY c.name COLLATE NOCASE
+        """
+        return try query(sql) { stmt in
+            let createdAtStr = self.columnText(stmt, 2)
+            return Collection(
+                id: self.columnText(stmt, 0),
+                name: self.columnText(stmt, 1),
+                createdAt: self.dateFormatter.date(from: createdAtStr) ?? .now,
+                color: self.columnTextOptional(stmt, 3),
+                documentCount: Int(sqlite3_column_int64(stmt, 4))
+            )
+        }
+    }
+
+    /// Renames a collection. Throws if the new name conflicts with an existing one.
+    func renameCollection(id: String, name: String) throws {
+        try execute(
+            "UPDATE collections SET name = ? WHERE id = ?",
+            bindings: [.text(name), .text(id)]
+        )
+    }
+
+    /// Deletes a collection. Documents in the collection become uncategorized (collection_id = NULL).
+    func deleteCollection(id: String) throws {
+        try performTransaction {
+            try execute(
+                "UPDATE documents SET collection_id = NULL WHERE collection_id = ?",
+                bindings: [.text(id)]
+            )
+            try execute("DELETE FROM collections WHERE id = ?", bindings: [.text(id)])
+        }
+    }
+
+    /// Assigns a document to a collection, or removes it from any collection when `collectionId` is nil.
+    func assignDocumentToCollection(documentId: String, collectionId: String?) throws {
+        if let collectionId {
+            try execute(
+                "UPDATE documents SET collection_id = ? WHERE id = ?",
+                bindings: [.text(collectionId), .text(documentId)]
+            )
+        } else {
+            try execute(
+                "UPDATE documents SET collection_id = NULL WHERE id = ?",
+                bindings: [.text(documentId)]
+            )
+        }
+    }
+
+    // MARK: - Chunk Feedback CRUD
+
+    /// Upserts a feedback record for a chunk. Pass `.neutral` to effectively clear feedback
+    /// (the record is deleted instead of stored as neutral to keep the table lean).
+    func setChunkFeedback(chunkId: String, type: FeedbackType) throws {
+        if type == .neutral {
+            try clearChunkFeedback(chunkId: chunkId)
+            return
+        }
+        // Look up source_path and title for the stable re-matching key.
+        let rows: [(String, String)] = try query(
+            "SELECT source_path, title FROM chunks WHERE id = ?",
+            bindings: [.text(chunkId)]
+        ) { stmt in
+            (self.columnText(stmt, 0), self.columnText(stmt, 1))
+        }
+        guard let (sourcePath, title) = rows.first else { return }
+        let titleHash = sha256Hex(title)
+        let now = dateFormatter.string(from: Date())
+        // Check if a record already exists for this chunk_id.
+        let existing: [String] = try query(
+            "SELECT id FROM chunk_feedback WHERE chunk_id = ?",
+            bindings: [.text(chunkId)]
+        ) { stmt in self.columnText(stmt, 0) }
+        if let existingId = existing.first {
+            try execute("""
+                UPDATE chunk_feedback
+                SET feedback_type = ?, multiplier = ?, updated_at = ?
+                WHERE id = ?
+            """, bindings: [
+                .text(type.rawValue),
+                .double(type.multiplier),
+                .text(now),
+                .text(existingId),
+            ])
+        } else {
+            let id = UUID().uuidString
+            try execute("""
+                INSERT INTO chunk_feedback (id, chunk_id, source_path, title_hash, feedback_type, multiplier, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, bindings: [
+                .text(id),
+                .text(chunkId),
+                .text(sourcePath),
+                .text(titleHash),
+                .text(type.rawValue),
+                .double(type.multiplier),
+                .text(now),
+                .text(now),
+            ])
+        }
+    }
+
+    /// Removes the feedback record for a chunk, returning it to neutral (1.0×).
+    func clearChunkFeedback(chunkId: String) throws {
+        try execute("DELETE FROM chunk_feedback WHERE chunk_id = ?", bindings: [.text(chunkId)])
+    }
+
+    /// Batch-fetches feedback multipliers for a set of chunk IDs.
+    /// Returns a dict of `chunkId → (type, multiplier)`. Missing entries = neutral (1.0×).
+    func getChunkFeedback(chunkIds: [String]) throws -> [String: (type: FeedbackType, multiplier: Double)] {
+        guard !chunkIds.isEmpty else { return [:] }
+        let placeholders = chunkIds.map { _ in "?" }.joined(separator: ", ")
+        let sql = "SELECT chunk_id, feedback_type, multiplier FROM chunk_feedback WHERE chunk_id IN (\(placeholders))"
+        let bindings = chunkIds.map { SQLiteBinding.text($0) }
+        let rows: [(String, FeedbackType, Double)] = try query(sql, bindings: bindings) { stmt in
+            let chunkId = self.columnText(stmt, 0)
+            let typeStr = self.columnText(stmt, 1)
+            let type = FeedbackType(rawValue: typeStr) ?? .neutral
+            let multiplier = sqlite3_column_double(stmt, 2)
+            return (chunkId, type, multiplier)
+        }
+        return Dictionary(uniqueKeysWithValues: rows.map { ($0.0, (type: $0.1, multiplier: $0.2)) })
+    }
+
+    /// Returns all active (non-neutral) feedback records, ordered by source document path.
+    func allFeedback() throws -> [ChunkFeedback] {
+        let sql = """
+            SELECT id, chunk_id, source_path, title_hash, feedback_type, multiplier, created_at, updated_at
+            FROM chunk_feedback
+            WHERE feedback_type != 'neutral'
+            ORDER BY source_path, title_hash
+        """
+        return try query(sql) { stmt in
+            ChunkFeedback(
+                id: self.columnText(stmt, 0),
+                chunkId: self.columnText(stmt, 1),
+                sourcePath: self.columnText(stmt, 2),
+                titleHash: self.columnText(stmt, 3),
+                feedbackType: FeedbackType(rawValue: self.columnText(stmt, 4)) ?? .neutral,
+                multiplier: sqlite3_column_double(stmt, 5),
+                createdAt: self.dateFormatter.date(from: self.columnText(stmt, 6)) ?? .now,
+                updatedAt: self.dateFormatter.date(from: self.columnText(stmt, 7)) ?? .now
+            )
+        }
+    }
+
+    /// Removes orphaned feedback records whose `chunk_id` no longer exists in `chunks`.
+    /// Call after re-indexing a document to clean up stale records.
+    func cleanOrphanedFeedback() throws {
+        try execute("DELETE FROM chunk_feedback WHERE chunk_id NOT IN (SELECT id FROM chunks)")
+    }
+
+    /// Batch-fetches chunk titles by ID. Used by FeedbackManagementView to resolve
+    /// display names without a full chunk fetch.
+    func chunkTitles(for chunkIds: [String]) throws -> [String: String] {
+        guard !chunkIds.isEmpty else { return [:] }
+        let placeholders = chunkIds.map { _ in "?" }.joined(separator: ", ")
+        let sql = "SELECT id, title FROM chunks WHERE id IN (\(placeholders))"
+        let bindings = chunkIds.map { SQLiteBinding.text($0) }
+        let rows: [(String, String)] = try query(sql, bindings: bindings) { stmt in
+            (self.columnText(stmt, 0), self.columnText(stmt, 1))
+        }
+        return Dictionary(uniqueKeysWithValues: rows)
+    }
+
+    // MARK: - Transaction Helper
+
     /// Runs the given block inside a transaction. Rolls back on error.
     func performTransaction<T>(_ block: () throws -> T) throws -> T {
         try execute("BEGIN TRANSACTION")
@@ -828,6 +1125,18 @@ actor DatabaseService {
     }
 
     // MARK: - Helpers
+
+    /// Returns a SHA-256 hex digest of `string`. Used for stable chunk title hashing
+    /// in `chunk_feedback` so feedback survives document re-indexing.
+    private func sha256Hex(_ string: String) -> String {
+        var result = [UInt8](repeating: 0, count: 32)
+        let data = Array(string.utf8)
+        // Inline SHA-256 via CommonCrypto (always available on Apple platforms).
+        data.withUnsafeBytes { ptr in
+            _ = CC_SHA256(ptr.baseAddress, CC_LONG(data.count), &result)
+        }
+        return result.map { String(format: "%02x", $0) }.joined()
+    }
 
     private func embeddingToBlob(_ embedding: [Float]) -> Data {
         embedding.withUnsafeBufferPointer { buffer in

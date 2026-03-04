@@ -23,7 +23,7 @@ enum ConversationDatabaseError: LocalizedError, Sendable {
 /// Uses `chunkpad_chat.db` in Application Support/Chunkpad. No documents, chunks, or embeddings.
 actor ConversationDatabaseService {
 
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 4
 
     private nonisolated(unsafe) var db: OpaquePointer?
     private let databasePath: String
@@ -160,6 +160,10 @@ actor ConversationDatabaseService {
                 break
             case 2:
                 try execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_timestamp ON messages(conversation_id, timestamp)")
+            case 3:
+                try execute("ALTER TABLE conversations ADD COLUMN collection_id TEXT")
+            case 4:
+                try execute("ALTER TABLE conversations ADD COLUMN exported_at TEXT")
             default:
                 break
             }
@@ -182,11 +186,11 @@ actor ConversationDatabaseService {
     }
 
     /// Creates a new conversation and returns its id.
-    func createConversation(title: String) throws -> String {
+    func createConversation(title: String, collectionId: String? = nil) throws -> String {
         guard let db else { throw ConversationDatabaseError.connectionFailed("No connection") }
         let id = UUID().uuidString
         let now = formatDate(Date())
-        let sql = "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)"
+        let sql = "INSERT INTO conversations (id, title, created_at, updated_at, collection_id) VALUES (?, ?, ?, ?, ?)"
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -196,6 +200,11 @@ actor ConversationDatabaseService {
         sqlite3_bind_text(statement, 2, title, -1, Self.sqliteTransient)
         sqlite3_bind_text(statement, 3, now, -1, Self.sqliteTransient)
         sqlite3_bind_text(statement, 4, now, -1, Self.sqliteTransient)
+        if let collectionId {
+            sqlite3_bind_text(statement, 5, collectionId, -1, Self.sqliteTransient)
+        } else {
+            sqlite3_bind_null(statement, 5)
+        }
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
@@ -219,9 +228,25 @@ actor ConversationDatabaseService {
         }
     }
 
+    /// Task 15.7: Mark a conversation as exported to the knowledge base.
+    func setExportedAt(conversationId: String, date: Date) throws {
+        guard let db else { throw ConversationDatabaseError.connectionFailed("No connection") }
+        let sql = "UPDATE conversations SET exported_at = ? WHERE id = ?"
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        }
+        sqlite3_bind_text(statement, 1, formatDate(date), -1, Self.sqliteTransient)
+        sqlite3_bind_text(statement, 2, conversationId, -1, Self.sqliteTransient)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        }
+    }
+
     func fetchConversations(limit: Int = 100) throws -> [Conversation] {
         guard let db else { throw ConversationDatabaseError.connectionFailed("No connection") }
-        let sql = "SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC LIMIT ?"
+        let sql = "SELECT id, title, created_at, updated_at, collection_id, exported_at FROM conversations ORDER BY updated_at DESC LIMIT ?"
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -236,7 +261,11 @@ actor ConversationDatabaseService {
             let updatedAtStr = String(cString: sqlite3_column_text(statement, 3))
             let createdAt = parseDate(createdAtStr)
             let updatedAt = parseDate(updatedAtStr)
-            result.append(Conversation(id: id, title: title, createdAt: createdAt, updatedAt: updatedAt))
+            let collectionIdPtr = sqlite3_column_text(statement, 4)
+            let collectionId = collectionIdPtr.map { String(cString: $0) }
+            let exportedAtPtr = sqlite3_column_text(statement, 5)
+            let exportedAt = exportedAtPtr.flatMap { parseDate(String(cString: $0)) }
+            result.append(Conversation(id: id, title: title, createdAt: createdAt, updatedAt: updatedAt, collectionId: collectionId, exportedAt: exportedAt))
         }
         return result
     }

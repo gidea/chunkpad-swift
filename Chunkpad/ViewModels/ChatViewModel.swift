@@ -11,6 +11,8 @@ struct Conversation: Identifiable, Sendable {
     let createdAt: Date
     let updatedAt: Date
     var messageCount: Int = 0
+    var collectionId: String? = nil
+    var exportedAt: Date? = nil  // 15.7: set when conversation is saved to knowledge base
 }
 
 // MARK: - Streaming Error Kind
@@ -86,6 +88,9 @@ final class ChatViewModel {
     /// List of past conversations for the sidebar. Refresh via refreshConversations().
     var conversations: [Conversation] = []
 
+    /// Collections available for scoping hybrid search. Populated by refreshCollections().
+    var collections: [Collection] = []
+
     // MARK: - Llama Offer State
 
     /// When true, the chat view shows an alert offering to download Llama 3.2.
@@ -106,10 +111,28 @@ final class ChatViewModel {
     /// Number of chunks auto-dropped from the last context build due to token budget.
     var droppedChunkCount = 0
 
+    // MARK: - Context Preview (Epic 14)
+
+    /// Chunks retrieved via search-before-send. Displayed in the search panel;
+    /// transferred to `retrievedChunks` when the user sends the message.
+    var previewChunks: [ScoredChunk] = []
+
+    /// True while the search-before-send embed+query pipeline is running.
+    var isSearchingPreview = false
+
+    /// Derived: true when the search panel has loaded results and the preview is visible.
+    var isPreviewActive: Bool { !previewChunks.isEmpty }
+
+    /// Number of chunks currently marked as included in the preview.
+    var previewIncludedCount: Int { previewChunks.filter(\.isIncluded).count }
+
     // MARK: - Pin Documents State
 
     /// When true, the pin-documents sheet is presented.
     var showPinDocumentsSheet = false
+
+    /// Task 15.5/15.6: True while a save-to-knowledge-base operation is in progress.
+    var isSavingToKB = false
 
     /// All indexed documents (fetched when the pin sheet opens).
     var indexedDocuments: [IndexedDocument] = []
@@ -143,7 +166,7 @@ final class ChatViewModel {
     func createNewConversation() async {
         guard let conversationDB else { return }
         do {
-            let id = try await conversationDB.createConversation(title: "New Chat")
+            let id = try await conversationDB.createConversation(title: "New Chat", collectionId: appState?.selectedCollectionId)
             currentConversationId = id
             messages.removeAll()
             retrievedChunks.removeAll()
@@ -162,9 +185,26 @@ final class ChatViewModel {
             currentConversationId = id
             messages = msgs
             retrievedChunks.removeAll()
+            clearPreview() // 14.8: switching conversations collapses the search panel
             error = nil
+            // 13.9: restore the collection scope that was active when this conversation was created
+            if let conv = conversations.first(where: { $0.id == id }),
+               let collectionId = conv.collectionId {
+                appState?.selectedCollectionId = collectionId
+            }
         } catch {
             self.error = "Failed to load conversation: \(error.localizedDescription)"
+        }
+    }
+
+    /// Refreshes the collection list from the main DB (used by the scope picker in ChatView).
+    /// Non-fatal — if the DB call fails, the picker simply shows no collections.
+    func refreshCollections() async {
+        do {
+            try await database.connect()
+            collections = try await database.fetchCollections()
+        } catch {
+            // Non-fatal — scope picker stays empty; user can still query all documents
         }
     }
 
@@ -273,7 +313,8 @@ final class ChatViewModel {
                 queryEmbedding: queryEmbedding,
                 queryText: text,
                 k: k,
-                minScore: minScore
+                minScore: minScore,
+                collectionId: appState?.selectedCollectionId
             )
 
             // 5b. Merge pinned document chunks (boosted to score 1.0)
@@ -456,6 +497,138 @@ final class ChatViewModel {
         }
     }
 
+    // MARK: - Context Preview (Epic 14)
+
+    /// Runs embed → hybridSearch → addPinnedChunks WITHOUT dispatching to the LLM.
+    /// Results populate `previewChunks`; the search panel in ChatView auto-expands
+    /// because `isPreviewActive` becomes true.
+    func searchWithoutSend(query: String) async {
+        guard !query.isEmpty,
+              (appState?.indexedDocumentCount ?? 0) > 0 else { return }
+
+        isSearchingPreview = true
+        defer { isSearchingPreview = false }
+
+        do {
+            try await database.connect()
+            try await embedder.ensureModelReady()
+            let queryEmbedding = try await embedder.embedQuery(query)
+            let k = max(1, min(appState?.searchResultCount ?? 10, 20))
+            let minScore = max(0.0, min(appState?.searchMinScore ?? 0.1, 1.0))
+            var chunks = try await database.hybridSearch(
+                queryEmbedding: queryEmbedding,
+                queryText: query,
+                k: k,
+                minScore: minScore,
+                collectionId: appState?.selectedCollectionId
+            )
+            try await addPinnedChunks(to: &chunks)
+            previewChunks = chunks
+        } catch {
+            self.error = "Search preview failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Overload used by the search panel's inline collection picker (Task 14.5).
+    /// Bypasses `appState.selectedCollectionId` and uses the provided `collectionId` directly.
+    /// Pass `nil` for "all documents", or a collection UUID string for a specific collection.
+    func searchWithoutSend(query: String, collectionId: String?) async {
+        guard !query.isEmpty,
+              (appState?.indexedDocumentCount ?? 0) > 0 else { return }
+
+        isSearchingPreview = true
+        defer { isSearchingPreview = false }
+
+        do {
+            try await database.connect()
+            try await embedder.ensureModelReady()
+            let queryEmbedding = try await embedder.embedQuery(query)
+            let k = max(1, min(appState?.searchResultCount ?? 10, 20))
+            let minScore = max(0.0, min(appState?.searchMinScore ?? 0.1, 1.0))
+            var chunks = try await database.hybridSearch(
+                queryEmbedding: queryEmbedding,
+                queryText: query,
+                k: k,
+                minScore: minScore,
+                collectionId: collectionId
+            )
+            try await addPinnedChunks(to: &chunks)
+            previewChunks = chunks
+        } catch {
+            self.error = "Search preview failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Sends using the already-retrieved `previewChunks`, skipping the embed/search steps.
+    /// Transfers `previewChunks` → `retrievedChunks`, then runs buildContext → LLM stream.
+    /// Falls back to the full `sendMessage` pipeline if `previewChunks` is empty.
+    func sendWithPreview(_ text: String, provider: LLMProvider) async {
+        guard !text.isEmpty, !previewChunks.isEmpty else {
+            await sendMessage(text, provider: provider)
+            return
+        }
+
+        if currentConversationId == nil {
+            await createNewConversation()
+            guard currentConversationId != nil else { return }
+        }
+
+        let userMessage = Message(role: .user, content: text)
+        messages.append(userMessage)
+        if let cid = currentConversationId {
+            await persistMessage(userMessage, conversationId: cid)
+            if messages.count == 1 {
+                let title = String(text.prefix(50))
+                let trimmed = title.count < text.count ? title + "…" : title
+                await persistConversationTitle(trimmed, conversationId: cid)
+            }
+            await refreshConversations()
+        }
+        error = nil
+
+        // Transfer preview → retrieved; collapse panel (14.8)
+        retrievedChunks = previewChunks
+        clearPreview()
+
+        let contextMessages = buildContext(scoredChunks: retrievedChunks, query: text)
+        let client = LLMServiceFactory.client(for: provider)
+        let includedChunks = retrievedChunks.filter(\.isIncluded)
+        let assistantMessage = Message(
+            role: .assistant,
+            content: "",
+            referencedChunkIDs: includedChunks.map(\.id)
+        )
+        messages.append(assistantMessage)
+        let assistantIndex = messages.count - 1
+
+        lastUserQuery = text
+        pendingRetryProvider = provider
+
+        runGeneration(client: client, contextMessages: contextMessages, assistantIndex: assistantIndex)
+        await generationTask?.value
+    }
+
+    /// Clears all search preview state and collapses the panel.
+    /// Called on send, explicit dismiss, and conversation switch (14.8).
+    func clearPreview() {
+        previewChunks.removeAll()
+    }
+
+    /// Toggles a chunk's `isIncluded` flag in the PREVIEW list (before send).
+    func togglePreviewChunk(id: String) {
+        if let index = previewChunks.firstIndex(where: { $0.id == id }) {
+            previewChunks[index].isIncluded.toggle()
+        }
+    }
+
+    /// Marks all chunks from a given source path as excluded in the preview.
+    /// Used by the "Remove document" button in the grouped panel view (14.3).
+    func removePreviewDocument(sourcePath: String) {
+        for index in previewChunks.indices where previewChunks[index].chunk.sourcePath == sourcePath {
+            previewChunks[index].isIncluded = false
+        }
+    }
+
     // MARK: - Context Building
 
     /// Builds LLM context from only the *included* scored chunks.
@@ -535,6 +708,25 @@ final class ChatViewModel {
     func toggleChunk(id: String) {
         if let index = retrievedChunks.firstIndex(where: { $0.id == id }) {
             retrievedChunks[index].isIncluded.toggle()
+        }
+    }
+
+    // MARK: - Chunk Feedback
+
+    /// Persists a feedback signal for a chunk and updates local retrieved-chunks state.
+    /// Pass `.neutral` to clear any existing feedback (reverts to 1.0× score multiplier).
+    ///
+    /// The DB write is async (actor hop to DatabaseService); the local `retrievedChunks`
+    /// update happens on MainActor immediately after so the UI re-renders without delay.
+    func setChunkFeedback(chunkId: String, type: FeedbackType) async {
+        do {
+            try await database.connect()
+            try await database.setChunkFeedback(chunkId: chunkId, type: type)
+            if let index = retrievedChunks.firstIndex(where: { $0.id == chunkId }) {
+                retrievedChunks[index].feedbackType = (type == .neutral) ? nil : type
+            }
+        } catch {
+            self.error = "Failed to save feedback: \(error.localizedDescription)"
         }
     }
 
@@ -697,6 +889,222 @@ final class ChatViewModel {
         await regenerate(provider: provider, retryQuery: query)
     }
 
+    // MARK: - Export (Epic 15)
+
+    /// Formats the entire conversation as a Markdown document with YAML frontmatter.
+    /// Caller is responsible for file I/O or clipboard copy.
+    func exportAsMarkdown() -> String {
+        let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+        let dateStr = ISO8601DateFormatter().string(from: Date())
+        let allChunkIDs = Set(messages.flatMap(\.referencedChunkIDs))
+
+        var md = """
+        ---
+        title: "\(title)"
+        date: \(dateStr)
+        messages: \(messages.count)
+        chunks_referenced: \(allChunkIDs.count)
+        ---
+
+        # \(title)
+
+        """
+
+        for message in messages {
+            let heading = message.role == .user ? "## You" : "## Assistant"
+            let ts = message.timestamp.formatted(date: .abbreviated, time: .shortened)
+            md += "\(heading)\n*\(ts)*\n\n\(message.content)\n\n---\n\n"
+        }
+
+        if !allChunkIDs.isEmpty {
+            md += "## Sources\n\n"
+            for id in allChunkIDs.sorted() { md += "- \(id)\n" }
+        }
+
+        return md
+    }
+
+    /// Returns a filesystem-safe filename for the conversation export.
+    func exportFilename(extension ext: String) -> String {
+        let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: " -_"))
+        let safe = title.components(separatedBy: allowed.inverted).joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let today = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let base = safe.isEmpty ? "Chat-\(today)" : safe
+        return "\(base).\(ext)"
+    }
+
+    /// Converts the markdown export to a `.docx` file using macOS `textutil` (two-step pipeline).
+    /// Returns the URL of a temporary `.docx` file; caller moves it to the final destination.
+    func exportAsDocx() async throws -> URL {
+        let md = exportAsMarkdown()
+        let tmp = FileManager.default.temporaryDirectory
+        let stem = UUID().uuidString
+        let mdURL   = tmp.appendingPathComponent("\(stem).md")
+        let htmlURL = tmp.appendingPathComponent("\(stem).html")
+        let docxURL = tmp.appendingPathComponent("\(stem).docx")
+
+        try md.write(to: mdURL, atomically: true, encoding: .utf8)
+        // Step 1: Markdown → HTML
+        try await runShell("/usr/bin/textutil",
+                           ["-convert", "html", mdURL.path, "-output", htmlURL.path])
+        // Step 2: HTML → DOCX
+        try await runShell("/usr/bin/textutil",
+                           ["-convert", "docx", htmlURL.path, "-output", docxURL.path])
+        try? FileManager.default.removeItem(at: mdURL)
+        try? FileManager.default.removeItem(at: htmlURL)
+        return docxURL
+    }
+
+    /// Runs an external process and returns its stdout as a String.
+    /// Throws if the process exits with a non-zero status.
+    @discardableResult
+    private func runShell(_ executable: String, _ args: [String]) async throws -> String {
+        try await withCheckedThrowingContinuation { cont in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: executable)
+            p.arguments = args
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError  = pipe
+            p.terminationHandler = { proc in
+                let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
+                                 encoding: .utf8) ?? ""
+                if proc.terminationStatus == 0 {
+                    cont.resume(returning: out)
+                } else {
+                    cont.resume(throwing: NSError(
+                        domain: "ExportError",
+                        code: Int(proc.terminationStatus),
+                        userInfo: [NSLocalizedDescriptionKey: out.isEmpty ? "textutil failed" : out]
+                    ))
+                }
+            }
+            do { try p.run() } catch { cont.resume(throwing: error) }
+        }
+    }
+
+    // MARK: - Save to Knowledge Base (Epic 15, tasks 15.5 & 15.6)
+
+    /// Task 15.5: Saves a single assistant response as a markdown document into the local knowledge base.
+    func saveResponseToKnowledgeBase(message: Message) async {
+        guard message.role == .assistant, !isSavingToKB else { return }
+        isSavingToKB = true
+        defer { isSavingToKB = false }
+        do {
+            let exportsDir = try exportsDirectory()
+            let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+            let iso = ISO8601DateFormatter().string(from: Date())
+
+            // Find the preceding user query for provenance metadata
+            let msgIndex = messages.firstIndex(where: { $0.id == message.id })
+            let query: String? = msgIndex.flatMap { i in
+                i > 0 && messages[i - 1].role == .user ? messages[i - 1].content : nil
+            }
+
+            var content = "---\nsource: chat-export\nconversation: \(title)\ndate: \(iso)"
+            if let q = query { content += "\nquery: \(q.prefix(200))" }
+            content += "\n---\n\n\(message.content)"
+
+            let safeName = exportFilename(extension: "md").replacingOccurrences(of: ".md", with: "")
+            let url = exportsDir.appendingPathComponent("\(safeName)-response.md")
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            try await indexFile(at: url)
+
+            // 15.7: mark conversation as exported
+            if let id = currentConversationId {
+                try? await conversationDB?.setExportedAt(conversationId: id, date: Date())
+                await refreshConversations()
+            }
+        } catch {
+            self.error = "Save to KB failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Task 15.6: Saves the full conversation as a Q&A markdown document into the knowledge base.
+    func saveConversationToKnowledgeBase() async {
+        guard !messages.isEmpty, !isSavingToKB else { return }
+        isSavingToKB = true
+        defer { isSavingToKB = false }
+        do {
+            let exportsDir = try exportsDirectory()
+            let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+            let iso = ISO8601DateFormatter().string(from: Date())
+            let url = exportsDir.appendingPathComponent(exportFilename(extension: "md"))
+
+            var content = "---\nsource: chat-export\nconversation: \(title)\ndate: \(iso)\n---\n\n# \(title)\n\n"
+            var i = 0
+            while i < messages.count {
+                let msg = messages[i]
+                if msg.role == .user {
+                    let firstLine = String(msg.content.prefix(100))
+                    content += "## Question: \(firstLine)\n\n\(msg.content)\n\n"
+                    if i + 1 < messages.count, messages[i + 1].role == .assistant {
+                        content += messages[i + 1].content + "\n\n---\n\n"
+                        i += 2
+                        continue
+                    }
+                }
+                i += 1
+            }
+
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            try await indexFile(at: url)
+
+            // 15.7: mark conversation as exported
+            if let id = currentConversationId {
+                try? await conversationDB?.setExportedAt(conversationId: id, date: Date())
+                await refreshConversations()
+            }
+        } catch {
+            self.error = "Save to KB failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Shared helper: processes a markdown file through DocumentProcessor → embeds → inserts into DatabaseService.
+    private func indexFile(at url: URL) async throws {
+        let processor = DocumentProcessor()
+        let processedChunks = try await processor.processFile(at: url)
+        guard !processedChunks.isEmpty else { return }
+
+        try await database.connect()
+        try await embedder.ensureModelReady()
+
+        let sourcePath = url.path
+        let docType = IndexedDocument.DocumentType(fromExtension: url.pathExtension)
+        let document = IndexedDocument(
+            id: sourcePath,
+            fileName: url.lastPathComponent,
+            filePath: sourcePath,
+            documentType: docType,
+            chunkCount: processedChunks.count,
+            fileSize: 0
+        )
+
+        var chunksWithEmbeddings: [(Chunk, [Float])] = []
+        for pc in processedChunks {
+            let embedding = try await embedder.embed(pc.content)
+            let chunk = Chunk(
+                title: pc.title,
+                content: pc.content,
+                documentType: pc.documentType,
+                slideNumber: pc.slideNumber,
+                sourcePath: pc.sourcePath
+            )
+            chunksWithEmbeddings.append((chunk, embedding))
+        }
+        try await database.insertDocumentWithChunks(document: document, chunksWithEmbeddings: chunksWithEmbeddings)
+    }
+
+    /// Returns (creating if needed) the dedicated exports folder in Application Support.
+    private func exportsDirectory() throws -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Chunkpad/exports", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
     // MARK: - Clear
 
     func clearConversation() {
@@ -704,5 +1112,6 @@ final class ChatViewModel {
         messages.removeAll()
         retrievedChunks.removeAll()
         error = nil
+        clearPreview() // 14.8: clear preview on conversation reset
     }
 }

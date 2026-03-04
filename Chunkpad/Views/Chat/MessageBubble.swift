@@ -2,11 +2,22 @@ import SwiftUI
 
 struct MessageBubble: View {
     let message: Message
+    /// Task 15.5: Called when the user taps "Save to Knowledge Base" in the context menu.
+    var onSaveToKB: (() -> Void)? = nil
+    @State private var copied = false
 
     private var assistantIcon: String {
         // Distinguish cloud vs local responses via the message metadata
         // For now, use a generic assistant icon; Phase 4 will set provider info per message
         "sparkles"
+    }
+
+    private func triggerCopied() {
+        withAnimation(.spring(response: 0.3)) { copied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            withAnimation(.easeOut(duration: 0.3)) { copied = false }
+        }
     }
 
     var body: some View {
@@ -34,6 +45,46 @@ struct MessageBubble: View {
                     }
                 }
                 .padding(12)
+                .overlay(alignment: message.role == .user ? .topLeading : .topTrailing) {
+                    // Task 15.1: "Copied" confirmation checkmark
+                    if copied {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .padding(6)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .contextMenu {
+                    if message.role == .assistant {
+                        Button {
+                            MessageExporter.copyMarkdown(message.content)
+                            triggerCopied()
+                        } label: {
+                            Label("Copy as Markdown", systemImage: "doc.on.clipboard")
+                        }
+                        Button {
+                            MessageExporter.copyPlainText(message.content)
+                            triggerCopied()
+                        } label: {
+                            Label("Copy as Plain Text", systemImage: "doc.plaintext")
+                        }
+                        if let onSaveToKB {
+                            Divider()
+                            Button {
+                                onSaveToKB()
+                            } label: {
+                                Label("Save to Knowledge Base", systemImage: "tray.and.arrow.down")
+                            }
+                        }
+                    } else {
+                        Button {
+                            MessageExporter.copyPlainText(message.content)
+                            triggerCopied()
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.clipboard")
+                        }
+                    }
+                }
                 .background {
                     if message.role == .user {
                         RoundedRectangle(cornerRadius: GlassTokens.Radius.card)
@@ -161,5 +212,70 @@ private struct MarkdownContentView: View {
         } catch {
             return AttributedString(text)
         }
+    }
+}
+
+// MARK: - MessageExporter (Task 15.1)
+
+/// Static helpers for copying and formatting message content.
+/// Shared by MessageBubble (15.1) and ChatView export actions (15.2).
+enum MessageExporter {
+
+    // MARK: Clipboard
+
+    /// Copies raw markdown content to the system clipboard.
+    static func copyMarkdown(_ content: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(content, forType: .string)
+    }
+
+    /// Strips markdown formatting and copies plain text to the clipboard.
+    static func copyPlainText(_ content: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(stripMarkdown(content), forType: .string)
+    }
+
+    /// Formats all messages as a simple plain-text transcript and copies to clipboard.
+    /// Role headings use "[You]" / "[Assistant]" with timestamps (Task 15.2).
+    static func copyConversation(_ messages: [Message]) {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        var output = ""
+        for message in messages {
+            let role = message.role == .user ? "You" : "Assistant"
+            let ts = df.string(from: message.timestamp)
+            output += "[\(role) — \(ts)]\n\n\(message.content)\n\n---\n\n"
+        }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(output.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+    }
+
+    // MARK: Formatting
+
+    /// Strips common markdown syntax, returning plain readable text.
+    static func stripMarkdown(_ text: String) -> String {
+        var result = text
+        // ATX headings: ## Title → Title
+        result = result.replacingOccurrences(of: #"(?m)^#{1,6}\s+"#,
+                                             with: "", options: .regularExpression)
+        // Bold / italic: **text** or *text* → text
+        result = result.replacingOccurrences(of: #"\*{1,2}([^*\n]+)\*{1,2}"#,
+                                             with: "$1", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"_{1,2}([^_\n]+)_{1,2}"#,
+                                             with: "$1", options: .regularExpression)
+        // Inline code: `code` → code
+        result = result.replacingOccurrences(of: #"`([^`\n]+)`"#,
+                                             with: "$1", options: .regularExpression)
+        // Markdown links: [label](url) → label
+        result = result.replacingOccurrences(of: #"\[([^\]]+)\]\([^\)]*\)"#,
+                                             with: "$1", options: .regularExpression)
+        // Code fences
+        result = result.replacingOccurrences(of: #"```[a-z]*\n?"#,
+                                             with: "", options: .regularExpression)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

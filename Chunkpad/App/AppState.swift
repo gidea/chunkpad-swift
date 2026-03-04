@@ -62,6 +62,12 @@ final class AppState {
     /// Document IDs that should always be included in RAG context. Persisted across sessions.
     var pinnedDocumentIDs: Set<String> = []
 
+    // MARK: - Collection Scope
+
+    /// The collection ID used to scope hybrid search in chat. nil = search all documents.
+    /// Persisted so the user's scope choice survives app restarts.
+    var selectedCollectionId: String? = nil
+
     // MARK: - Database Status
 
     var isDatabaseConnected = false
@@ -107,6 +113,7 @@ final class AppState {
         static let llmTemperature = "profile_llm_temperature"
         static let llmMaxTokens = "profile_llm_max_tokens"
         static let pinnedDocumentIDs = "profile_pinned_document_ids"
+        static let selectedCollectionId = "profile_selected_collection_id"
     }
 
     private static let keychainAnthropic = "anthropic_api_key"
@@ -132,6 +139,7 @@ final class AppState {
         if let pinned = Self.defaults.stringArray(forKey: ProfileKey.pinnedDocumentIDs) {
             pinnedDocumentIDs = Set(pinned)
         }
+        selectedCollectionId = Self.defaults.string(forKey: ProfileKey.selectedCollectionId)
     }
 
     /// Persist current settings and API keys. Call when any persisted property changes (e.g. from Settings).
@@ -150,6 +158,11 @@ final class AppState {
             Self.defaults.removeObject(forKey: ProfileKey.pinnedDocumentIDs)
         } else {
             Self.defaults.set(Array(pinnedDocumentIDs), forKey: ProfileKey.pinnedDocumentIDs)
+        }
+        if let cid = selectedCollectionId {
+            Self.defaults.set(cid, forKey: ProfileKey.selectedCollectionId)
+        } else {
+            Self.defaults.removeObject(forKey: ProfileKey.selectedCollectionId)
         }
         if anthropicAPIKey.isEmpty {
             KeychainHelper.remove(account: Self.keychainAnthropic)

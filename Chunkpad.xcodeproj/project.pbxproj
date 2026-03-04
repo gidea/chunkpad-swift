@@ -28,7 +28,10 @@
 		784E28EA2FAB3BA15A47067A /* Chunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2C72E7B8897539F47E4422 /* Chunk.swift */; };
 		85F49A6D686DC0E89AD200CE /* ChunkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2800900A9B7B6AF101D17691 /* ChunkPreview.swift */; };
 		88A6F038B4D1F6723AE95202 /* ScoredChunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A671952C4307ABBA9135C1C /* ScoredChunk.swift */; };
+		F5A433B968C543528759E383 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2DD55F3365451EA7DE977A /* Collection.swift */; };
+		3429351979534E03B3D15C6C /* ChunkFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1FC11F7980940CEBAA63B44 /* ChunkFeedback.swift */; };
 		89760D7882CDD82C66E33D28 /* DatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */; };
+		936995447DDA4165B14E6009 /* BookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED83142DE804519B09EA005 /* BookmarkService.swift */; };
 		AC85CA2502016275C0888E86 /* IndexingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F1FF271718D84F64B12B343 /* IndexingViewModel.swift */; };
 		AC93F835FD614BEAB51A92F7 /* sqlite-vec.c in Sources */ = {isa = PBXBuildFile; fileRef = 3D09376B06A823F9382D10A9 /* sqlite-vec.c */; };
 		B52A8D6CEC28E6885CC337BF /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA31F7B308DA69859A36CC69 /* OpenAIClient.swift */; };
@@ -46,6 +49,8 @@
 		EEAA93F135F97FA6C3070F24 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 1C94ACF1429AD798A9B88EB3 /* MLXLMCommon */; };
 		FA80B2A8AB663CAE0CF8EEFB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B7CEAEA72991BE0CDBCF557 /* AppState.swift */; };
 		FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E8DD3A89A1EA39273F1EF /* GlassCard.swift */; };
+		4CA4B477546C46D78FAB6B71 /* ChunkStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DF90FA6432468DA6821220 /* ChunkStatusBadge.swift */; };
+		3596CCC5142E2B271DD202FE /* FeedbackManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1261DE7C4A008DB663DF66 /* FeedbackManagementView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -54,6 +59,7 @@
 		126F9250109F47C5BF26533B /* Chunkpad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chunkpad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		15B9C791BBBB1C9635A973A4 /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
 		260E8DD3A89A1EA39273F1EF /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
+		72DF90FA6432468DA6821220 /* ChunkStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkStatusBadge.swift; sourceTree = "<group>"; };
 		2800900A9B7B6AF101D17691 /* ChunkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkPreview.swift; sourceTree = "<group>"; };
 		2B7CEAEA72991BE0CDBCF557 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		2E08FA952EEC3ED43C850BDF /* BundledLLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledLLMService.swift; sourceTree = "<group>"; };
@@ -67,8 +73,11 @@
 		4513FF8851EBE92D63669E5A /* GlassPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPill.swift; sourceTree = "<group>"; };
 		55054113AD5B984E336F6013 /* LLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMService.swift; sourceTree = "<group>"; };
 		599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
+		EED83142DE804519B09EA005 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
 		5D4533BE42750E1AB39C4DF0 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		6A671952C4307ABBA9135C1C /* ScoredChunk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoredChunk.swift; sourceTree = "<group>"; };
+		CB2DD55F3365451EA7DE977A /* Collection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Collection.swift; sourceTree = "<group>"; };
+		C1FC11F7980940CEBAA63B44 /* ChunkFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkFeedback.swift; sourceTree = "<group>"; };
 		6D9B13927A9545D9F1B87342 /* GlassTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassTokens.swift; sourceTree = "<group>"; };
 		945988654CC4701EADA5B0C8 /* EmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingService.swift; sourceTree = "<group>"; };
 		977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMProvider.swift; sourceTree = "<group>"; };
@@ -90,6 +99,7 @@
 		EE0750CEACD2B0C9EC986AE2 /* Chunkpad.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Chunkpad.entitlements; sourceTree = "<group>"; };
 		F51C2CB36117BE12326326DD /* ChunkpadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkpadApp.swift; sourceTree = "<group>"; };
 		FA865D22A09829EE2001197D /* DocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentsView.swift; sourceTree = "<group>"; };
+		AF1261DE7C4A008DB663DF66 /* FeedbackManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackManagementView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,6 +120,7 @@
 			isa = PBXGroup;
 			children = (
 				260E8DD3A89A1EA39273F1EF /* GlassCard.swift */,
+				72DF90FA6432468DA6821220 /* ChunkStatusBadge.swift */,
 				D0613625E9A250908E4D25CF /* GlassIconButton.swift */,
 				4513FF8851EBE92D63669E5A /* GlassPill.swift */,
 				6D9B13927A9545D9F1B87342 /* GlassTokens.swift */,
@@ -168,6 +179,7 @@
 				3905AAD1C08F121C21AD3821 /* ChunkFileService.swift */,
 				D1B05C4203BD3D9C450E5565 /* ConversationDatabaseService.swift */,
 				599EB6E316060AFD2EF1FBAE /* DatabaseService.swift */,
+				EED83142DE804519B09EA005 /* BookmarkService.swift */,
 				D8166A0FF8CE1B59E34044DB /* DocumentProcessor.swift */,
 				945988654CC4701EADA5B0C8 /* EmbeddingService.swift */,
 				5D4533BE42750E1AB39C4DF0 /* KeychainHelper.swift */,
@@ -182,6 +194,7 @@
 			isa = PBXGroup;
 			children = (
 				FA865D22A09829EE2001197D /* DocumentsView.swift */,
+				AF1261DE7C4A008DB663DF66 /* FeedbackManagementView.swift */,
 				32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */,
 			);
 			path = Documents;
@@ -252,6 +265,8 @@
 				977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */,
 				E7A9E1A806AE6FBE3997F98A /* Message.swift */,
 				6A671952C4307ABBA9135C1C /* ScoredChunk.swift */,
+				CB2DD55F3365451EA7DE977A /* Collection.swift */,
+				C1FC11F7980940CEBAA63B44 /* ChunkFeedback.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -357,10 +372,13 @@
 				D3D5C717F7A05E84A73C3D07 /* ChunkpadApp.swift in Sources */,
 				046FC20E044DCFDC8E59A877 /* ConversationDatabaseService.swift in Sources */,
 				89760D7882CDD82C66E33D28 /* DatabaseService.swift in Sources */,
+				936995447DDA4165B14E6009 /* BookmarkService.swift in Sources */,
 				0E1F606BD786DD5AC3290517 /* DocumentProcessor.swift in Sources */,
 				54E86156189656F088A1750B /* DocumentsView.swift in Sources */,
+				3596CCC5142E2B271DD202FE /* FeedbackManagementView.swift in Sources */,
 				BB1331DA8BABF022F8B80F3C /* EmbeddingService.swift in Sources */,
 				FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */,
+				4CA4B477546C46D78FAB6B71 /* ChunkStatusBadge.swift in Sources */,
 				1A6DEA9F8C9FB8526273DF95 /* GlassIconButton.swift in Sources */,
 				C38BFFA09DE039C7246F207E /* GlassPill.swift in Sources */,
 				D737AECC6230D515F407CA72 /* GlassTokens.swift in Sources */,
@@ -378,6 +396,8 @@
 				B52A8D6CEC28E6885CC337BF /* OpenAIClient.swift in Sources */,
 				31782F89B8691F9AC8DEBA77 /* PinDocumentsSheet.swift in Sources */,
 				88A6F038B4D1F6723AE95202 /* ScoredChunk.swift in Sources */,
+				F5A433B968C543528759E383 /* Collection.swift in Sources */,
+				3429351979534E03B3D15C6C /* ChunkFeedback.swift in Sources */,
 				3B556E6426A27D5CF3C45F0B /* SettingsView.swift in Sources */,
 				AC93F835FD614BEAB51A92F7 /* sqlite-vec.c in Sources */,
 			);
