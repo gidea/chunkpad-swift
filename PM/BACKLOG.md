@@ -304,4 +304,106 @@ This creates a one-way flow: documents → chunks → answers → nowhere. Turni
 
 ---
 
+## Epic 16: Retrieval Feedback Loop
+
+> **Goal:** Let users permanently mark chunks as irrelevant (hide) or valuable (boost) so the retrieval system learns from usage patterns and improves over time — delivering better context with less manual curation on every future query.
+
+### Problem
+
+Today, chunk relevance is calculated fresh on every query using a static formula (70% vector similarity + 30% FTS5 keyword match). The system has no memory of past interactions. A user who repeatedly excludes the same noisy chunk from marketing boilerplate must toggle it off every single time. Conversely, a chunk that consistently produces great answers gets no advantage over one that never helps.
+
+The toggle system (`isIncluded`) is ephemeral — it resets on every new query. Users are doing the work of teaching the system what's useful, but that signal is discarded immediately.
+
+### Inspiration
+
+- **Spotify's like/dislike** — simple binary signals that shape future recommendations
+- **Google Search feedback** — "Not helpful" signals that suppress results
+- **Retrieval-Augmented Generation research** — relevance feedback loops for improving retrieval quality
+
+### User Stories
+
+1. As a user, I want to mark a chunk as irrelevant so it stops appearing in future searches (or appears with much lower priority).
+2. As a user, I want to boost a chunk so it ranks higher in future searches, since I know it's consistently useful.
+3. As a user, I want to see which chunks I've boosted or hidden so I can manage my feedback decisions.
+4. As a user, I want the system to learn from my toggle behavior over time — chunks I frequently exclude should naturally rank lower.
+5. As a user, I want to undo a hide or boost decision if my needs change.
+
+### Design Decisions
+
+- **Explicit feedback** via hide/boost icons on `ChunkPreview` cards. This extends the existing toggle (include/exclude per query) with persistent signals.
+- **Feedback is stored per-chunk, not per-query**. A hidden chunk is hidden across all future queries; a boosted chunk is boosted everywhere. This is simpler than per-query or per-collection feedback (which can come in v2).
+- **Score multiplier model**: feedback applies as a multiplier to the hybrid search score. Boosted chunks get a `1.5×` multiplier; hidden chunks get `0.0×` (effectively filtered out). Neutral chunks remain at `1.0×`. These multipliers are applied after the hybrid score is computed but before the `minScore` filter and top-k selection.
+- **Implicit learning (v2, deferred)**: tracking which chunks users toggle off frequently and auto-dampening them. The explicit hide/boost is the MVP; implicit signals can layer on top later.
+- **No re-embedding needed**: feedback modifies the scoring formula, not the embeddings themselves. The vector space stays unchanged.
+- **Feedback survives re-indexing**: feedback is stored by a content-based key (source path + chunk title hash), not by chunk UUID. When a document is re-processed, feedback for matching chunks is preserved.
+
+### Tasks
+
+#### 16.1 Feedback data model and storage [P0]
+- Create `chunk_feedback` table in the main database:
+  - `id TEXT PRIMARY KEY`
+  - `chunk_id TEXT NOT NULL` (FK to chunks.id, ON DELETE CASCADE)
+  - `source_path TEXT NOT NULL` (for surviving re-indexing)
+  - `title_hash TEXT NOT NULL` (SHA-256 of chunk title, for re-matching after re-index)
+  - `feedback_type TEXT NOT NULL` (`boost`, `hide`, `neutral`)
+  - `multiplier REAL NOT NULL DEFAULT 1.0` (1.5 for boost, 0.0 for hide, 1.0 for neutral)
+  - `created_at TEXT NOT NULL`
+  - `updated_at TEXT NOT NULL`
+- Schema migration (bump version)
+- Index on `chunk_id` and on `(source_path, title_hash)` for re-matching
+- DatabaseService methods: `setChunkFeedback(chunkId:, type:)`, `getChunkFeedback(chunkIds:) → [String: Double]`, `clearChunkFeedback(chunkId:)`
+
+#### 16.2 Feedback-aware hybrid search [P0]
+- Load feedback multipliers for candidate chunks after hybrid scoring
+- Apply multipliers: `finalScore = hybridScore × feedbackMultiplier`
+- Hidden chunks (`multiplier = 0.0`) are filtered out before the `minScore` threshold
+- Boosted chunks (`multiplier = 1.5`) get capped at `1.0` after multiplication to avoid artificial inflation beyond maximum
+- Add `feedbackType` property to `ScoredChunk` (optional, for UI display)
+- Preserve backward compatibility: chunks with no feedback record default to `1.0×`
+
+#### 16.3 Hide and boost icons on ChunkPreview [P0]
+- Add two new icon buttons to the `ChunkPreview` header, alongside the existing toggle:
+  - **Hide** (eye.slash icon): marks chunk as irrelevant. Tapping sets `feedback_type = 'hide'`, chunk immediately fades out with strikethrough and will not appear in future searches
+  - **Boost** (hand.thumbsup icon): marks chunk as valuable. Tapping sets `feedback_type = 'boost'`, chunk gets a subtle upward-arrow badge or green highlight
+- Icons show current state: filled when active (boosted/hidden), outlined when neutral
+- Tapping an active icon reverts to neutral (undo)
+- Visual feedback: brief animation on state change (scale pulse or color flash)
+
+#### 16.4 Feedback indicators in chunk display [P1]
+- Boosted chunks: green upward-arrow pill or "Boosted" label next to relevance score
+- Hidden chunks: should not normally appear (filtered in search), but if shown in management UI, display with strikethrough and "Hidden" label
+- Chunks with feedback show a subtle indicator so users know their signal is being applied
+- In the regenerate bar summary: "N boosted · M hidden" count if any feedback exists
+
+#### 16.5 Feedback management view [P1]
+- New section in Settings or Documents view: "Chunk Feedback"
+- List of all chunks with active feedback (boosted or hidden), grouped by document
+- Each row shows: chunk title, source document, feedback type, date set
+- Actions: change feedback type, clear feedback (revert to neutral)
+- Bulk actions: "Clear All Feedback", "Clear Hidden", "Clear Boosts"
+- Search/filter within the feedback list
+
+#### 16.6 Feedback preservation across re-indexing [P2]
+- When a document is re-processed (re-embedded), match old feedback to new chunks by `(source_path, title_hash)`
+- `title_hash` uses SHA-256 of the chunk title string for stable matching
+- If a chunk's content changes but title stays the same, feedback carries over
+- If both title and content change (different chunk), feedback is orphaned (left in table but no longer matched)
+- Periodic cleanup: remove orphaned feedback records where `chunk_id` no longer exists in `chunks` table
+
+#### 16.7 Implicit feedback signals (deferred — v2) [P3]
+- Track toggle-off frequency per chunk across queries (how often users exclude it)
+- Track which chunks were included in responses the user continued the conversation after (positive signal)
+- Compute an implicit multiplier: `1.0 - (excludeRate × 0.5)` — chunks excluded 80%+ of the time get dampened to 0.6×
+- Blend implicit and explicit: explicit always wins (hide/boost override implicit)
+- Show implicit feedback strength in the management view: "Excluded 4/5 times"
+
+#### 16.8 Feedback analytics [P3]
+- Dashboard or summary in Settings showing feedback impact:
+  - Total boosted chunks, total hidden chunks
+  - "Feedback improved relevance by ~X%" (compare average included-chunk scores before/after feedback)
+  - Most-boosted documents, most-hidden documents
+- Exportable as part of Epic 15 (Turn Chat Into Asset) — feedback data included in knowledge base metadata
+
+---
+
 *Add new epics below as they are identified.*
