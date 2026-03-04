@@ -573,3 +573,232 @@ Chunk display is a plain list only. No view mode toggle, no grid cards, no filte
 - [x] `isDownloading: Bool` computed var added to both (covers `.downloading`, `.retrying`, `.loading`)
 - [x] All call sites updated: `ChatViewModel` (`.downloading(let p, _, _)`), `IndexingViewModel` (`.downloading(let p, _, _, _)`)
 - [x] `clearStatusCallback()` added to both services (3.7.1–3.7.2)
+
+---
+
+## Sprints 14–21: Epics 13–16 — Collections, Context Preview, Chat Export & Feedback Loop ✅ Complete
+
+**Goal:** Close the knowledge-management flywheel — organize documents into collections, preview and curate RAG context before sending, export chat outputs back into the knowledge base, and learn from user feedback signals to improve future retrieval.
+
+**Epics:** 13 (Document Collections), 14 (Context Preview Before Send), 15 (Turn Chat Into Asset), 16 (Retrieval Feedback Loop)
+**Sprints:** 14–21 (8 phases, sequenced to touch each shared component only once)
+**Status:** ✅ Complete — all planned tasks shipped; task 16.7 (implicit feedback v2) explicitly deferred to a future epic.
+
+---
+
+### Sprint 14 — Phase 1: Data Layer Foundation ✅
+
+**Files:** `DatabaseService.swift`, `ScoredChunk.swift`, `Collection.swift` (new), `ChunkFeedback.swift` (new)
+
+#### 13.1 Database schema for collections ✅
+- [x] `collections` table: `id TEXT PK, name TEXT UNIQUE NOT NULL, created_at TEXT, color TEXT`
+- [x] `collection_id TEXT` nullable FK added to `documents`, `vec_chunks`, `chunks_fts`
+- [x] `idx_documents_collection_id` index; existing rows get `collection_id = NULL`
+- [x] Combined with 16.1 in a single schema migration v10 → v11
+
+#### 16.1 Feedback data model and storage ✅
+- [x] `chunk_feedback` table: `id, chunk_id (FK cascade), source_path, title_hash, feedback_type CHECK('boost','hide','neutral'), multiplier REAL, created_at, updated_at`
+- [x] Indexes on `chunk_id` and `(source_path, title_hash)`
+- [x] `setChunkFeedback(chunkId:type:)`, `getChunkFeedback(chunkIds:)`, `clearChunkFeedback(chunkId:)`, `allFeedback()`
+- [x] New `FeedbackType` enum: `.boost` (1.5×), `.hide` (0.5×), `.neutral` (1.0×)
+- [x] New `ChunkFeedback` struct: `id, chunkId, sourcePath, titleHash, feedbackType, multiplier, createdAt, updatedAt`
+
+#### 13.3 Collection model ✅
+- [x] New `Collection.swift`: `struct Collection: Identifiable, Codable, Sendable { id, name, createdAt, color?, documentCount }`
+- [x] `ScoredChunk` extended with `collectionName: String? = nil` and `feedbackType: FeedbackType? = nil`
+
+#### 13.2 Collection CRUD ✅
+- [x] `createCollection(name:color:)`, `fetchCollections()`, `renameCollection(id:name:)`, `deleteCollection(id:)`
+- [x] `assignDocumentToCollection(documentId:collectionId:)` — UPDATE documents + vec_chunks rows
+
+---
+
+### Sprint 15 — Phase 2: Search Pipeline ✅
+
+**Files:** `DatabaseService.swift` (hybridSearch, vectorSearch, fullTextSearch)
+
+#### 13.4 Filtered hybrid search ✅
+- [x] `collectionId: String? = nil` parameter added to `hybridSearch`
+- [x] Vector search: `WHERE collection_id = ?` on aux column when non-nil
+- [x] FTS5 search: subquery `AND rowid IN (SELECT rowid FROM chunks WHERE document_id IN (SELECT id FROM documents WHERE collection_id = ?))`
+- [x] Chunk fetch: `LEFT JOIN documents d … LEFT JOIN collections col …` populates `collectionName`
+
+#### 16.2 Feedback-aware hybrid search ✅
+- [x] After normalization: batch-load multipliers via `getChunkFeedback(chunkIds:)`
+- [x] `finalScore = hybridScore × multiplier`, capped at 1.0
+- [x] `ScoredChunk.feedbackType` populated from feedback lookup
+- [x] No filtering of hidden chunks — dampened but still surfaceable if highly relevant
+
+---
+
+### Sprint 16 — Phase 3: Chunk Display ✅
+
+**Files:** `ChunkPreview.swift`, `ChatViewModel.swift` (feedback methods), `ChatView.swift`
+
+#### 16.3 Hide and boost icons on ChunkPreview ✅
+- [x] `eye.slash` (hide) and `hand.thumbsup` (boost) `GlassIconButton`s in ChunkPreview header
+- [x] Filled SF Symbol variant when active; outline when neutral; spring-pulse animation on change
+- [x] Tapping active icon reverts to neutral (toggle undo)
+- [x] `onHide` / `onBoost` callbacks wired through `ChatView`
+- [x] `ChatViewModel.setChunkFeedback(chunkId:type:)`, `clearChunkFeedback`, `toggleChunkFeedback`
+
+#### 16.4 Feedback indicators in chunk display ✅
+- [x] Green "Boosted" `GlassPill` next to relevance score pill
+- [x] Gray "Hidden" label with muted styling
+- [x] Regenerate bar summary shows "N boosted · M hidden" count
+
+#### 13.8 Collection badge on ChunkPreview ✅
+- [x] `GlassPill` showing `scoredChunk.collectionName` when non-nil, positioned after title
+
+---
+
+### Sprint 17 — Phase 4: Collection Management UI ✅
+
+**Files:** `DocumentsView.swift`, `ChatView.swift`, `ChatViewModel.swift`, `AppState.swift`, `IndexingViewModel.swift`
+
+#### 13.6 Collection management UI in DocumentsView ✅
+- [x] Collection list section above chunk tree: colored circle, name, document count badge
+- [x] "New Collection" button → inline form (name + optional color)
+- [x] Context menu per row: Rename, Delete (with confirmation)
+- [x] Drag-and-drop / context menu on document rows: "Move to Collection" submenu
+
+#### 13.5 Collection scope picker in ChatView toolbar ✅
+- [x] `Picker` in toolbar: "All Documents" + each collection
+- [x] `ChatViewModel.collections: [Collection]` loaded via `fetchCollections()` on init
+- [x] `sendMessage` passes `selectedCollectionId` to `hybridSearch`
+- [x] `AppState.selectedCollectionId` persisted in UserDefaults
+
+#### 13.7 Collection assignment during indexing ✅
+- [x] Sheet after `selectAndProcessFolder()`: "Assign to collection?" picker
+- [x] "None (Uncategorized)" + existing collections + "New Collection…"
+- [x] Bulk `assignDocumentToCollection` for all documents in the folder
+
+---
+
+### Sprint 18 — Phase 5: Context Preview Before Send ✅
+
+**Files:** `ChatView.swift`, `ChatViewModel.swift`
+
+#### 14.1 Search-before-send flow ✅
+- [x] Magnifying glass button (`searchPreviewButton`) left of send button
+- [x] `ChatViewModel.searchWithoutSend(query:)` — embed → hybridSearch → no LLM call
+- [x] `previewChunks: [ScoredChunk]` stored separately from `retrievedChunks`
+- [x] Send button label changes to "Send with N chunks" when preview is active
+- [x] `sendWithPreview()` skips re-search, uses `previewChunks` directly
+
+#### 14.2 Search panel UI ✅
+- [x] Collapsible panel inserted between chunksBar and inputBar
+- [x] Summary header: "N documents · M chunks · ~X tokens"
+- [x] Horizontal ScrollView of `ChunkPreview` cards reusing Phase 3 enhancements
+- [x] Token budget indicator bar (color-coded)
+
+#### 14.3 Document-level grouping and removal ✅
+- [x] Groups by `sourcePath`; document header with chunk count + "Remove" button
+- [x] Segmented toggle: flat ↔ grouped view
+
+#### 14.4 Inline retrieval controls ✅
+- [x] `Slider` for minimum relevance score (0.0–1.0) in panel header
+- [x] Client-side filter: `previewChunks.filter { $0.relevanceScore >= threshold }`
+- [x] "Re-search" button re-runs `searchWithoutSend` with current input text
+- [x] Default from `appState.searchMinScore`
+
+#### 14.8 Search panel state lifecycle ✅
+- [x] `previewChunks` cleared on send; panel collapses
+- [x] Switching conversations clears preview
+- [x] Relevance slider / chunk toggles preserve `previewChunks` without re-search
+
+---
+
+### Sprint 19 — Phase 6: Chat Export ✅
+
+**Files:** `MessageBubble.swift`, `ChatView.swift`, `ChatViewModel.swift`
+
+#### 15.1 Copy single message to clipboard ✅
+- [x] `.contextMenu` on assistant messages: "Copy as Markdown", "Copy as Plain Text"
+- [x] Animated green ✓ checkmark overlay (1.5s auto-dismiss)
+- [x] `MessageExporter` static helper: `copyMarkdown`, `copyPlainText`, `copyConversation`, `stripMarkdown`
+
+#### 15.2 Copy full conversation to clipboard ✅
+- [x] "Copy Conversation" in ChatView export `Menu`
+- [x] Format: title + date header, `## You` / `## Assistant` headings + timestamps
+- [x] Reuses `MessageExporter.copyConversation(_:)`
+
+#### 15.3 Export conversation as markdown file ✅
+- [x] `ChatViewModel.exportAsMarkdown()` — YAML frontmatter + role headings + `## Sources` section
+- [x] `NSSavePanel` with default filename from `exportFilename(extension:)`
+
+#### 15.4 Export conversation as .docx ✅
+- [x] `ChatViewModel.exportAsDocx()` — two-step textutil pipeline: markdown → HTML → docx
+- [x] `NSSavePanel` with `.docx` extension; temp file moved to user destination
+
+---
+
+### Sprint 20 — Phase 7: Polish ✅
+
+**Files:** `ChatView.swift`, `DocumentsView.swift`, `FeedbackManagementView.swift` (new), `DatabaseService.swift`, `IndexingViewModel.swift`
+
+#### 14.5 Collection switcher in search panel ✅
+- [x] Inline `Picker` in `searchPanelHeader` for panel-local collection scope
+- [x] `@State panelCollectionId` independent of global toolbar scope
+- [x] `onChange` re-runs `searchWithoutSend(query:collectionId:)` immediately
+- [x] Re-search button passes `panelCollectionId`
+
+#### 14.7 Keyboard shortcuts ✅
+- [x] `Cmd+K` on `searchPreviewButton` opens/triggers preview panel
+- [x] `Escape` on xmark dismiss button collapses panel
+
+#### 16.5 Feedback management view ✅
+- [x] New `FeedbackManagementView.swift`: sheet from Documents toolbar button
+- [x] List grouped by source document; per-row toggle (boost ↔ hide) and clear buttons
+- [x] Bulk actions menu: "Clear All Feedback", "Clear Boosts Only", "Clear Hidden Only"
+- [x] `.searchable` filter by chunk title or document name
+- [x] `DatabaseService.chunkTitles(for:)` batch helper added
+
+#### 16.6 Feedback preservation across re-indexing ✅
+- [x] `IndexingViewModel.embedApprovedChunks` calls `database.cleanOrphanedFeedback()` after embedding
+- [x] Deletes `chunk_feedback` rows where `chunk_id NOT IN (SELECT id FROM chunks)`
+
+---
+
+### Sprint 21 — Phase 8: Collection Persistence, Save to KB, Budget & Analytics ✅
+
+**Files:** `ConversationDatabaseService.swift`, `ChatViewModel.swift`, `MessageBubble.swift`, `ChatView.swift`, `MainView.swift`, `FeedbackManagementView.swift`
+
+#### 13.9 Persist conversation-collection scope ✅
+- [x] `ConversationDatabaseService` schema v2→v3: `ALTER TABLE conversations ADD COLUMN collection_id TEXT`
+- [x] `createConversation(title:collectionId:)` stores current scope
+- [x] `fetchConversations` reads and populates `Conversation.collectionId`
+- [x] `ChatViewModel.loadConversation` restores `appState.selectedCollectionId` from record
+- [x] `Conversation` struct gains `collectionId: String? = nil`
+- [x] MainView sidebar: `folder.badge.person.crop` icon when conversation is scoped
+
+#### 14.6 Enhanced context budget visualization ✅
+- [x] `tokenBudgetBar` replaced: VStack with progress bar + "~X / Y tokens (Z% of budget)"
+- [x] Over-budget warning text at >80%: "Some chunks may be trimmed on send"
+- [x] Color thresholds: green <50%, orange <80%, red ≥80%
+
+#### 15.5 Save single assistant response to knowledge base ✅
+- [x] `MessageBubble.onSaveToKB` closure + "Save to Knowledge Base" context menu item
+- [x] `ChatViewModel.saveResponseToKnowledgeBase(message:)`: writes YAML-frontmatted `.md` to `~/Library/Application Support/Chunkpad/exports/`
+- [x] `indexFile(at:)` helper: DocumentProcessor → EmbeddingService.ensureModelReady → embed each chunk → DatabaseService.insertDocumentWithChunks
+- [x] `isSavingToKB` state prevents concurrent saves
+
+#### 15.6 Save full conversation to knowledge base ✅
+- [x] `ChatViewModel.saveConversationToKnowledgeBase()`: formats Q&A pairs as `## Question:` sections
+- [x] "Save Conversation to Knowledge Base" in ChatView export menu with inline spinner
+
+#### 15.7 Export indicators ✅
+- [x] `ConversationDatabaseService` schema v3→v4: `ALTER TABLE conversations ADD COLUMN exported_at TEXT`
+- [x] `setExportedAt(conversationId:date:)` method added
+- [x] Both save-to-KB operations call `setExportedAt` on success + `refreshConversations`
+- [x] `Conversation` struct gains `exportedAt: Date? = nil`
+- [x] MainView sidebar: `tray.and.arrow.down.fill` icon when conversation has been exported to KB
+
+#### 16.8 Feedback analytics ✅
+- [x] `topDocuments` computed property: top-5 source documents by total feedback count
+- [x] "Top Documents by Feedback" `Section` in `FeedbackManagementView` — boost/hide counts per doc
+
+---
+
+**Deferred to future epics:**
+- 16.7 Implicit feedback signals (v2) — auto-dampen chunks excluded frequently; requires `chunk_toggle_stats` table and blend logic
