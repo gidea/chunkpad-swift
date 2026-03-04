@@ -332,7 +332,7 @@ The toggle system (`isIncluded`) is ephemeral — it resets on every new query. 
 
 - **Explicit feedback** via hide/boost icons on `ChunkPreview` cards. This extends the existing toggle (include/exclude per query) with persistent signals.
 - **Feedback is stored per-chunk, not per-query**. A hidden chunk is hidden across all future queries; a boosted chunk is boosted everywhere. This is simpler than per-query or per-collection feedback (which can come in v2).
-- **Score multiplier model**: feedback applies as a multiplier to the hybrid search score. Boosted chunks get a `1.5×` multiplier; hidden chunks get `0.0×` (effectively filtered out). Neutral chunks remain at `1.0×`. These multipliers are applied after the hybrid score is computed but before the `minScore` filter and top-k selection.
+- **Score multiplier model**: feedback applies as a multiplier to the hybrid search score. Boosted chunks get a `1.5×` multiplier; hidden chunks get `0.5×` (heavily dampened but still retrievable if highly relevant). Neutral chunks remain at `1.0×`. These multipliers are applied after the hybrid score is computed but before the `minScore` filter and top-k selection. A hidden chunk with a strong match (e.g. `0.9 × 0.5 = 0.45`) can still surface — it just needs to earn its place.
 - **Implicit learning (v2, deferred)**: tracking which chunks users toggle off frequently and auto-dampening them. The explicit hide/boost is the MVP; implicit signals can layer on top later.
 - **No re-embedding needed**: feedback modifies the scoring formula, not the embeddings themselves. The vector space stays unchanged.
 - **Feedback survives re-indexing**: feedback is stored by a content-based key (source path + chunk title hash), not by chunk UUID. When a document is re-processed, feedback for matching chunks is preserved.
@@ -346,7 +346,7 @@ The toggle system (`isIncluded`) is ephemeral — it resets on every new query. 
   - `source_path TEXT NOT NULL` (for surviving re-indexing)
   - `title_hash TEXT NOT NULL` (SHA-256 of chunk title, for re-matching after re-index)
   - `feedback_type TEXT NOT NULL` (`boost`, `hide`, `neutral`)
-  - `multiplier REAL NOT NULL DEFAULT 1.0` (1.5 for boost, 0.0 for hide, 1.0 for neutral)
+  - `multiplier REAL NOT NULL DEFAULT 1.0` (1.5 for boost, 0.5 for hide, 1.0 for neutral)
   - `created_at TEXT NOT NULL`
   - `updated_at TEXT NOT NULL`
 - Schema migration (bump version)
@@ -356,14 +356,14 @@ The toggle system (`isIncluded`) is ephemeral — it resets on every new query. 
 #### 16.2 Feedback-aware hybrid search [P0]
 - Load feedback multipliers for candidate chunks after hybrid scoring
 - Apply multipliers: `finalScore = hybridScore × feedbackMultiplier`
-- Hidden chunks (`multiplier = 0.0`) are filtered out before the `minScore` threshold
+- Hidden chunks (`multiplier = 0.5`) are dampened but still retrievable when highly relevant to the query
 - Boosted chunks (`multiplier = 1.5`) get capped at `1.0` after multiplication to avoid artificial inflation beyond maximum
 - Add `feedbackType` property to `ScoredChunk` (optional, for UI display)
 - Preserve backward compatibility: chunks with no feedback record default to `1.0×`
 
 #### 16.3 Hide and boost icons on ChunkPreview [P0]
 - Add two new icon buttons to the `ChunkPreview` header, alongside the existing toggle:
-  - **Hide** (eye.slash icon): marks chunk as irrelevant. Tapping sets `feedback_type = 'hide'`, chunk immediately fades out with strikethrough and will not appear in future searches
+  - **Hide** (eye.slash icon): marks chunk as irrelevant. Tapping sets `feedback_type = 'hide'`, chunk gets a dampened visual treatment and will rank significantly lower in future searches (0.5× multiplier)
   - **Boost** (hand.thumbsup icon): marks chunk as valuable. Tapping sets `feedback_type = 'boost'`, chunk gets a subtle upward-arrow badge or green highlight
 - Icons show current state: filled when active (boosted/hidden), outlined when neutral
 - Tapping an active icon reverts to neutral (undo)
