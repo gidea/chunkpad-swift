@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MessageBubble: View {
     let message: Message
+    /// Task 15.5: Called when the user taps "Save to Knowledge Base" in the context menu.
+    var onSaveToKB: (() -> Void)? = nil
     @State private var copied = false
 
     private var assistantIcon: String {
@@ -65,6 +67,14 @@ struct MessageBubble: View {
                             triggerCopied()
                         } label: {
                             Label("Copy as Plain Text", systemImage: "doc.plaintext")
+                        }
+                        if let onSaveToKB {
+                            Divider()
+                            Button {
+                                onSaveToKB()
+                            } label: {
+                                Label("Save to Knowledge Base", systemImage: "tray.and.arrow.down")
+                            }
                         }
                     } else {
                         Button {

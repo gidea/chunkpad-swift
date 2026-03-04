@@ -34,6 +34,20 @@ struct FeedbackManagementView: View {
         }
     }
 
+    /// Task 16.8: Top-5 documents by total feedback signal count, for analytics section.
+    private var topDocuments: [(name: String, boosts: Int, hides: Int)] {
+        let grouped = Dictionary(grouping: feedbackRecords,
+                                 by: { URL(fileURLWithPath: $0.sourcePath).lastPathComponent })
+        typealias Row = (name: String, boosts: Int, hides: Int)
+        let rows: [Row] = grouped.keys.map { name in
+            let records = grouped[name] ?? []
+            let boosts = records.filter { $0.feedbackType == .boost }.count
+            let hides  = records.filter { $0.feedbackType == .hide  }.count
+            return (name: name, boosts: boosts, hides: hides)
+        }
+        return rows.sorted { ($0.boosts + $0.hides) > ($1.boosts + $1.hides) }.prefix(5).map { $0 }
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -94,6 +108,30 @@ struct FeedbackManagementView: View {
                 .padding(.vertical, 2)
             } header: {
                 Text("Summary")
+            }
+
+            // Task 16.8: Top documents by total feedback count
+            if !topDocuments.isEmpty {
+                Section("Top Documents by Feedback") {
+                    ForEach(topDocuments, id: \.name) { doc in
+                        HStack {
+                            Text(doc.name)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Spacer()
+                            if doc.boosts > 0 {
+                                Label("\(doc.boosts)", systemImage: "hand.thumbsup.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
+                            if doc.hides > 0 {
+                                Label("\(doc.hides)", systemImage: "eye.slash.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
             }
 
             ForEach(groupedBySource, id: \.path) { group in

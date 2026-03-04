@@ -44,6 +44,13 @@ struct MainView: View {
                                         Text("·")
                                         Text("\(conv.messageCount) msg\(conv.messageCount == 1 ? "" : "s")")
                                     }
+                                    if conv.collectionId != nil {
+                                        Image(systemName: "folder.badge.person.crop")
+                                    }
+                                    if conv.exportedAt != nil {
+                                        Image(systemName: "tray.and.arrow.down.fill")
+                                            .help("Saved to Knowledge Base")
+                                    }
                                 }
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)

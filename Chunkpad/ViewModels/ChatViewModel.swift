@@ -11,6 +11,8 @@ struct Conversation: Identifiable, Sendable {
     let createdAt: Date
     let updatedAt: Date
     var messageCount: Int = 0
+    var collectionId: String? = nil
+    var exportedAt: Date? = nil  // 15.7: set when conversation is saved to knowledge base
 }
 
 // MARK: - Streaming Error Kind
@@ -129,6 +131,9 @@ final class ChatViewModel {
     /// When true, the pin-documents sheet is presented.
     var showPinDocumentsSheet = false
 
+    /// Task 15.5/15.6: True while a save-to-knowledge-base operation is in progress.
+    var isSavingToKB = false
+
     /// All indexed documents (fetched when the pin sheet opens).
     var indexedDocuments: [IndexedDocument] = []
 
@@ -161,7 +166,7 @@ final class ChatViewModel {
     func createNewConversation() async {
         guard let conversationDB else { return }
         do {
-            let id = try await conversationDB.createConversation(title: "New Chat")
+            let id = try await conversationDB.createConversation(title: "New Chat", collectionId: appState?.selectedCollectionId)
             currentConversationId = id
             messages.removeAll()
             retrievedChunks.removeAll()
@@ -182,6 +187,11 @@ final class ChatViewModel {
             retrievedChunks.removeAll()
             clearPreview() // 14.8: switching conversations collapses the search panel
             error = nil
+            // 13.9: restore the collection scope that was active when this conversation was created
+            if let conv = conversations.first(where: { $0.id == id }),
+               let collectionId = conv.collectionId {
+                appState?.selectedCollectionId = collectionId
+            }
         } catch {
             self.error = "Failed to load conversation: \(error.localizedDescription)"
         }
@@ -973,6 +983,126 @@ final class ChatViewModel {
             }
             do { try p.run() } catch { cont.resume(throwing: error) }
         }
+    }
+
+    // MARK: - Save to Knowledge Base (Epic 15, tasks 15.5 & 15.6)
+
+    /// Task 15.5: Saves a single assistant response as a markdown document into the local knowledge base.
+    func saveResponseToKnowledgeBase(message: Message) async {
+        guard message.role == .assistant, !isSavingToKB else { return }
+        isSavingToKB = true
+        defer { isSavingToKB = false }
+        do {
+            let exportsDir = try exportsDirectory()
+            let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+            let iso = ISO8601DateFormatter().string(from: Date())
+
+            // Find the preceding user query for provenance metadata
+            let msgIndex = messages.firstIndex(where: { $0.id == message.id })
+            let query: String? = msgIndex.flatMap { i in
+                i > 0 && messages[i - 1].role == .user ? messages[i - 1].content : nil
+            }
+
+            var content = "---\nsource: chat-export\nconversation: \(title)\ndate: \(iso)"
+            if let q = query { content += "\nquery: \(q.prefix(200))" }
+            content += "\n---\n\n\(message.content)"
+
+            let safeName = exportFilename(extension: "md").replacingOccurrences(of: ".md", with: "")
+            let url = exportsDir.appendingPathComponent("\(safeName)-response.md")
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            try await indexFile(at: url)
+
+            // 15.7: mark conversation as exported
+            if let id = currentConversationId {
+                try? await conversationDB?.setExportedAt(conversationId: id, date: Date())
+                await refreshConversations()
+            }
+        } catch {
+            self.error = "Save to KB failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Task 15.6: Saves the full conversation as a Q&A markdown document into the knowledge base.
+    func saveConversationToKnowledgeBase() async {
+        guard !messages.isEmpty, !isSavingToKB else { return }
+        isSavingToKB = true
+        defer { isSavingToKB = false }
+        do {
+            let exportsDir = try exportsDirectory()
+            let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+            let iso = ISO8601DateFormatter().string(from: Date())
+            let url = exportsDir.appendingPathComponent(exportFilename(extension: "md"))
+
+            var content = "---\nsource: chat-export\nconversation: \(title)\ndate: \(iso)\n---\n\n# \(title)\n\n"
+            var i = 0
+            while i < messages.count {
+                let msg = messages[i]
+                if msg.role == .user {
+                    let firstLine = String(msg.content.prefix(100))
+                    content += "## Question: \(firstLine)\n\n\(msg.content)\n\n"
+                    if i + 1 < messages.count, messages[i + 1].role == .assistant {
+                        content += messages[i + 1].content + "\n\n---\n\n"
+                        i += 2
+                        continue
+                    }
+                }
+                i += 1
+            }
+
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            try await indexFile(at: url)
+
+            // 15.7: mark conversation as exported
+            if let id = currentConversationId {
+                try? await conversationDB?.setExportedAt(conversationId: id, date: Date())
+                await refreshConversations()
+            }
+        } catch {
+            self.error = "Save to KB failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Shared helper: processes a markdown file through DocumentProcessor → embeds → inserts into DatabaseService.
+    private func indexFile(at url: URL) async throws {
+        let processor = DocumentProcessor()
+        let processedChunks = try await processor.processFile(at: url)
+        guard !processedChunks.isEmpty else { return }
+
+        try await database.connect()
+        try await embedder.ensureModelReady()
+
+        let sourcePath = url.path
+        let docType = IndexedDocument.DocumentType(fromExtension: url.pathExtension)
+        let document = IndexedDocument(
+            id: sourcePath,
+            fileName: url.lastPathComponent,
+            filePath: sourcePath,
+            documentType: docType,
+            chunkCount: processedChunks.count,
+            fileSize: 0
+        )
+
+        var chunksWithEmbeddings: [(Chunk, [Float])] = []
+        for pc in processedChunks {
+            let embedding = try await embedder.embed(pc.content)
+            let chunk = Chunk(
+                title: pc.title,
+                content: pc.content,
+                documentType: pc.documentType,
+                slideNumber: pc.slideNumber,
+                sourcePath: pc.sourcePath
+            )
+            chunksWithEmbeddings.append((chunk, embedding))
+        }
+        try await database.insertDocumentWithChunks(document: document, chunksWithEmbeddings: chunksWithEmbeddings)
+    }
+
+    /// Returns (creating if needed) the dedicated exports folder in Application Support.
+    private func exportsDirectory() throws -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Chunkpad/exports", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
     }
 
     // MARK: - Clear

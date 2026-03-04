@@ -67,8 +67,20 @@ struct ChatView: View {
                     } label: {
                         Label("Export as Word Document…", systemImage: "doc.richtext")
                     }
+                    Divider()
+                    Button {
+                        Task { await viewModel.saveConversationToKnowledgeBase() }
+                    } label: {
+                        Label(viewModel.isSavingToKB ? "Saving…" : "Save Conversation to Knowledge Base",
+                              systemImage: "tray.and.arrow.down")
+                    }
+                    .disabled(viewModel.isSavingToKB)
                 } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
+                    if viewModel.isSavingToKB {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                    }
                 }
                 .disabled(viewModel.messages.isEmpty)
             }
@@ -160,8 +172,10 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(viewModel.messages) { message in
-                            MessageBubble(message: message)
-                                .id(message.id)
+                            MessageBubble(message: message, onSaveToKB: message.role == .assistant ? {
+                                Task { await viewModel.saveResponseToKnowledgeBase(message: message) }
+                            } : nil)
+                            .id(message.id)
                         }
 
                         // Llama download progress
@@ -670,16 +684,16 @@ struct ChatView: View {
         .padding(.vertical, 6)
     }
 
-    /// Colour-coded token budget bar (green < 75%, orange < 90%, red >= 90%).
+    /// Task 14.6: Colour-coded token budget bar with exact counts, percentage, and over-budget warning.
     private var tokenBudgetBar: some View {
         let budget = Int(Double(appState.contextSize) * 0.8)
         let used = viewModel.previewChunks
             .filter { $0.isIncluded && $0.relevanceScore >= previewMinScore }
             .reduce(0) { $0 + max(1, $1.chunk.content.count / 4) }
         let fraction = min(1.0, Double(used) / Double(max(1, budget)))
-        let barColor: Color = fraction < 0.75 ? .green : fraction < 0.9 ? .orange : .red
+        let barColor: Color = fraction < 0.5 ? .green : fraction < 0.8 ? .orange : .red
 
-        return HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: 3) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.08)).frame(height: 4)
@@ -690,10 +704,17 @@ struct ChatView: View {
             }
             .frame(height: 4)
 
-            Text("\(used.formatted())/\(budget.formatted()) tok")
-                .font(.caption2)
-                .foregroundStyle(fraction < 0.75 ? AnyShapeStyle(.secondary) : fraction < 0.9 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.red))
-                .frame(width: 90, alignment: .trailing)
+            HStack {
+                Text("~\(used.formatted()) / \(budget.formatted()) tokens (\(Int(fraction * 100))% of budget)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if fraction > 0.8 {
+                    Text("Some chunks may be trimmed on send")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
