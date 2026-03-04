@@ -289,19 +289,6 @@ This creates a one-way flow: documents → chunks → answers → nowhere. Turni
 - Prevent duplicate re-indexing: warn if the same conversation was already saved to KB
 - Show "View in Documents" link when a conversation has been indexed
 
-#### 15.8 Batch export [P3]
-- Multi-select conversations in the sidebar for bulk export
-- "Export Selected as Markdown" writes individual `.md` files or a single combined file
-- "Save Selected to Knowledge Base" processes all selected conversations through the indexing pipeline
-- Progress bar for multi-conversation operations
-
-#### 15.9 Export settings [P3]
-- Settings section: "Exports"
-- Configurable exports folder path (default: `~/Library/Application Support/Chunkpad/exports/`)
-- Toggle: include source chunk references in exports (default: on)
-- Toggle: include timestamps in exports (default: on)
-- Toggle: auto-assign exports to a collection (depends on Epic 13)
-
 ---
 
 ## Epic 16: Retrieval Feedback Loop
