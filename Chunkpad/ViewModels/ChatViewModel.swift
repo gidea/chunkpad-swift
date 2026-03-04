@@ -519,6 +519,36 @@ final class ChatViewModel {
         }
     }
 
+    /// Overload used by the search panel's inline collection picker (Task 14.5).
+    /// Bypasses `appState.selectedCollectionId` and uses the provided `collectionId` directly.
+    /// Pass `nil` for "all documents", or a collection UUID string for a specific collection.
+    func searchWithoutSend(query: String, collectionId: String?) async {
+        guard !query.isEmpty,
+              (appState?.indexedDocumentCount ?? 0) > 0 else { return }
+
+        isSearchingPreview = true
+        defer { isSearchingPreview = false }
+
+        do {
+            try await database.connect()
+            try await embedder.ensureModelReady()
+            let queryEmbedding = try await embedder.embedQuery(query)
+            let k = max(1, min(appState?.searchResultCount ?? 10, 20))
+            let minScore = max(0.0, min(appState?.searchMinScore ?? 0.1, 1.0))
+            var chunks = try await database.hybridSearch(
+                queryEmbedding: queryEmbedding,
+                queryText: query,
+                k: k,
+                minScore: minScore,
+                collectionId: collectionId
+            )
+            try await addPinnedChunks(to: &chunks)
+            previewChunks = chunks
+        } catch {
+            self.error = "Search preview failed: \(error.localizedDescription)"
+        }
+    }
+
     /// Sends using the already-retrieved `previewChunks`, skipping the embed/search steps.
     /// Transfers `previewChunks` → `retrievedChunks`, then runs buildContext → LLM stream.
     /// Falls back to the full `sendMessage` pipeline if `previewChunks` is empty.
@@ -847,6 +877,102 @@ final class ChatViewModel {
               let query = lastUserQuery else { return }
         streamingError = nil
         await regenerate(provider: provider, retryQuery: query)
+    }
+
+    // MARK: - Export (Epic 15)
+
+    /// Formats the entire conversation as a Markdown document with YAML frontmatter.
+    /// Caller is responsible for file I/O or clipboard copy.
+    func exportAsMarkdown() -> String {
+        let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+        let dateStr = ISO8601DateFormatter().string(from: Date())
+        let allChunkIDs = Set(messages.flatMap(\.referencedChunkIDs))
+
+        var md = """
+        ---
+        title: "\(title)"
+        date: \(dateStr)
+        messages: \(messages.count)
+        chunks_referenced: \(allChunkIDs.count)
+        ---
+
+        # \(title)
+
+        """
+
+        for message in messages {
+            let heading = message.role == .user ? "## You" : "## Assistant"
+            let ts = message.timestamp.formatted(date: .abbreviated, time: .shortened)
+            md += "\(heading)\n*\(ts)*\n\n\(message.content)\n\n---\n\n"
+        }
+
+        if !allChunkIDs.isEmpty {
+            md += "## Sources\n\n"
+            for id in allChunkIDs.sorted() { md += "- \(id)\n" }
+        }
+
+        return md
+    }
+
+    /// Returns a filesystem-safe filename for the conversation export.
+    func exportFilename(extension ext: String) -> String {
+        let title = conversations.first { $0.id == currentConversationId }?.title ?? "Chat"
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: " -_"))
+        let safe = title.components(separatedBy: allowed.inverted).joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let today = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let base = safe.isEmpty ? "Chat-\(today)" : safe
+        return "\(base).\(ext)"
+    }
+
+    /// Converts the markdown export to a `.docx` file using macOS `textutil` (two-step pipeline).
+    /// Returns the URL of a temporary `.docx` file; caller moves it to the final destination.
+    func exportAsDocx() async throws -> URL {
+        let md = exportAsMarkdown()
+        let tmp = FileManager.default.temporaryDirectory
+        let stem = UUID().uuidString
+        let mdURL   = tmp.appendingPathComponent("\(stem).md")
+        let htmlURL = tmp.appendingPathComponent("\(stem).html")
+        let docxURL = tmp.appendingPathComponent("\(stem).docx")
+
+        try md.write(to: mdURL, atomically: true, encoding: .utf8)
+        // Step 1: Markdown → HTML
+        try await runShell("/usr/bin/textutil",
+                           ["-convert", "html", mdURL.path, "-output", htmlURL.path])
+        // Step 2: HTML → DOCX
+        try await runShell("/usr/bin/textutil",
+                           ["-convert", "docx", htmlURL.path, "-output", docxURL.path])
+        try? FileManager.default.removeItem(at: mdURL)
+        try? FileManager.default.removeItem(at: htmlURL)
+        return docxURL
+    }
+
+    /// Runs an external process and returns its stdout as a String.
+    /// Throws if the process exits with a non-zero status.
+    @discardableResult
+    private func runShell(_ executable: String, _ args: [String]) async throws -> String {
+        try await withCheckedThrowingContinuation { cont in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: executable)
+            p.arguments = args
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError  = pipe
+            p.terminationHandler = { proc in
+                let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
+                                 encoding: .utf8) ?? ""
+                if proc.terminationStatus == 0 {
+                    cont.resume(returning: out)
+                } else {
+                    cont.resume(throwing: NSError(
+                        domain: "ExportError",
+                        code: Int(proc.terminationStatus),
+                        userInfo: [NSLocalizedDescriptionKey: out.isEmpty ? "textutil failed" : out]
+                    ))
+                }
+            }
+            do { try p.run() } catch { cont.resume(throwing: error) }
+        }
     }
 
     // MARK: - Clear

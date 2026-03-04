@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(AppState.self) private var appState
@@ -12,6 +13,8 @@ struct ChatView: View {
     @State private var previewGrouped = false
     // Task 14.4: client-side relevance filter (initialised from appState.searchMinScore in .task)
     @State private var previewMinScore: Double = 0.0
+    // Task 14.5: collection scope inside the search panel (independent of global appState scope)
+    @State private var panelCollectionId: String? = nil
     /// Timer that fires during streaming to auto-scroll to the bottom.
     private let streamingScrollTimer = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
 
@@ -45,11 +48,36 @@ struct ChatView: View {
                     Label("New Chat", systemImage: "plus.message")
                 }
             }
+            // Tasks 15.2, 15.3, 15.4: Export menu
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        copyConversation()
+                    } label: {
+                        Label("Copy Conversation", systemImage: "doc.on.doc")
+                    }
+                    Divider()
+                    Button {
+                        Task { await exportAsMarkdown() }
+                    } label: {
+                        Label("Export as Markdown…", systemImage: "square.and.arrow.up")
+                    }
+                    Button {
+                        Task { await exportAsDocx() }
+                    } label: {
+                        Label("Export as Word Document…", systemImage: "doc.richtext")
+                    }
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .disabled(viewModel.messages.isEmpty)
+            }
         }
         .navigationTitle("Chat")
         // Task 13.5: Load collections for scope picker and persist scope changes
         .task {
             previewMinScore = appState.searchMinScore   // 14.4: init slider from settings
+            panelCollectionId = appState.selectedCollectionId  // 14.5: align panel scope with global scope
             await viewModel.refreshCollections()
         }
         .onChange(of: appState.selectedCollectionId) {
@@ -513,6 +541,7 @@ struct ChatView: View {
                   || viewModel.isSearchingPreview
                   || viewModel.isGenerating)
         .help("Preview which chunks will be retrieved without sending")
+        .keyboardShortcut("k", modifiers: .command)
     }
 
     // MARK: - Search Panel (Tasks 14.2, 14.3, 14.4)
@@ -581,6 +610,23 @@ struct ChatView: View {
             .frame(width: 64)
             .controlSize(.mini)
 
+            // Task 14.5: inline collection scope picker for the search panel
+            Picker("Scope", selection: $panelCollectionId) {
+                Text("All Documents").tag(String?.none)
+                ForEach(viewModel.collections) { col in
+                    Text(col.name).tag(Optional(col.id))
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .onChange(of: panelCollectionId) { _, _ in
+                // Re-run search when scope changes (only if there's an active query)
+                let q = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !q.isEmpty {
+                    Task { await viewModel.searchWithoutSend(query: q, collectionId: panelCollectionId) }
+                }
+            }
+
             // Dismiss the preview panel
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -593,6 +639,7 @@ struct ChatView: View {
             }
             .buttonStyle(.plain)
             .help("Clear search preview")
+            .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -611,7 +658,7 @@ struct ChatView: View {
             Button("Re-search") {
                 let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !query.isEmpty else { return }
-                Task { await viewModel.searchWithoutSend(query: query) }
+                Task { await viewModel.searchWithoutSend(query: query, collectionId: panelCollectionId) }
             }
             .buttonStyle(.glass)
             .controlSize(.small)
@@ -763,6 +810,48 @@ struct ChatView: View {
             Task { await viewModel.retryLastMessage() }
         } else if viewModel.isBundledLLMReady {
             Task { await viewModel.retryLastMessage() }
+        }
+    }
+
+    // MARK: - Export
+
+    private func copyConversation() {
+        MessageExporter.copyConversation(viewModel.messages)
+    }
+
+    private func exportAsMarkdown() async {
+        let content = viewModel.exportAsMarkdown()
+        let filename = viewModel.exportFilename(extension: "md")
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        guard await panel.beginSheetModal(for: NSApp.keyWindow ?? NSWindow()) == .OK,
+              let url = panel.url else { return }
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            // swallow — user can retry
+        }
+    }
+
+    private func exportAsDocx() async {
+        let filename = viewModel.exportFilename(extension: "docx")
+        do {
+            let tempURL = try await viewModel.exportAsDocx()
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = filename
+            panel.allowedContentTypes = [UTType(filenameExtension: "docx") ?? .data]
+            panel.canCreateDirectories = true
+            guard await panel.beginSheetModal(for: NSApp.keyWindow ?? NSWindow()) == .OK,
+                  let dest = panel.url else {
+                try? FileManager.default.removeItem(at: tempURL)
+                return
+            }
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.moveItem(at: tempURL, to: dest)
+        } catch {
+            // swallow — user can retry
         }
     }
 

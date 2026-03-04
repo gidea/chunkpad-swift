@@ -1096,6 +1096,19 @@ actor DatabaseService {
         try execute("DELETE FROM chunk_feedback WHERE chunk_id NOT IN (SELECT id FROM chunks)")
     }
 
+    /// Batch-fetches chunk titles by ID. Used by FeedbackManagementView to resolve
+    /// display names without a full chunk fetch.
+    func chunkTitles(for chunkIds: [String]) throws -> [String: String] {
+        guard !chunkIds.isEmpty else { return [:] }
+        let placeholders = chunkIds.map { _ in "?" }.joined(separator: ", ")
+        let sql = "SELECT id, title FROM chunks WHERE id IN (\(placeholders))"
+        let bindings = chunkIds.map { SQLiteBinding.text($0) }
+        let rows: [(String, String)] = try query(sql, bindings: bindings) { stmt in
+            (self.columnText(stmt, 0), self.columnText(stmt, 1))
+        }
+        return Dictionary(uniqueKeysWithValues: rows)
+    }
+
     // MARK: - Transaction Helper
 
     /// Runs the given block inside a transaction. Rolls back on error.

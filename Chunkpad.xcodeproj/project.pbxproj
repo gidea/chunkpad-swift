@@ -50,6 +50,7 @@
 		FA80B2A8AB663CAE0CF8EEFB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B7CEAEA72991BE0CDBCF557 /* AppState.swift */; };
 		FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E8DD3A89A1EA39273F1EF /* GlassCard.swift */; };
 		4CA4B477546C46D78FAB6B71 /* ChunkStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DF90FA6432468DA6821220 /* ChunkStatusBadge.swift */; };
+		3596CCC5142E2B271DD202FE /* FeedbackManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1261DE7C4A008DB663DF66 /* FeedbackManagementView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -98,6 +99,7 @@
 		EE0750CEACD2B0C9EC986AE2 /* Chunkpad.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Chunkpad.entitlements; sourceTree = "<group>"; };
 		F51C2CB36117BE12326326DD /* ChunkpadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkpadApp.swift; sourceTree = "<group>"; };
 		FA865D22A09829EE2001197D /* DocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentsView.swift; sourceTree = "<group>"; };
+		AF1261DE7C4A008DB663DF66 /* FeedbackManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackManagementView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -192,6 +194,7 @@
 			isa = PBXGroup;
 			children = (
 				FA865D22A09829EE2001197D /* DocumentsView.swift */,
+				AF1261DE7C4A008DB663DF66 /* FeedbackManagementView.swift */,
 				32719860A70D8B0C4A1FD0E1 /* IndexingProgressView.swift */,
 			);
 			path = Documents;
@@ -372,6 +375,7 @@
 				936995447DDA4165B14E6009 /* BookmarkService.swift in Sources */,
 				0E1F606BD786DD5AC3290517 /* DocumentProcessor.swift in Sources */,
 				54E86156189656F088A1750B /* DocumentsView.swift in Sources */,
+				3596CCC5142E2B271DD202FE /* FeedbackManagementView.swift in Sources */,
 				BB1331DA8BABF022F8B80F3C /* EmbeddingService.swift in Sources */,
 				FC54617A489AB10D397B6A4F /* GlassCard.swift in Sources */,
 				4CA4B477546C46D78FAB6B71 /* ChunkStatusBadge.swift in Sources */,

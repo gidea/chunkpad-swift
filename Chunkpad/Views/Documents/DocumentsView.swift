@@ -26,6 +26,7 @@ struct DocumentsView: View {
     @State private var renameText = ""
     @State private var collectionToDelete: Collection? = nil
     @State private var showDeleteCollectionConfirmation = false
+    @State private var showFeedbackManagement = false
 
     enum ChunkViewMode: String {
         case list, grid
@@ -103,6 +104,13 @@ struct DocumentsView: View {
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showFeedbackManagement = true
+                } label: {
+                    Label("Chunk Feedback", systemImage: "hand.thumbsup.circle")
                 }
             }
         }
@@ -263,6 +271,9 @@ struct DocumentsView: View {
                     viewModel.showCollectionAssignmentSheet = false
                 }
             )
+        }
+        .sheet(isPresented: $showFeedbackManagement) {
+            FeedbackManagementView(database: DatabaseService())
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if viewModel.indexedFolder != nil {

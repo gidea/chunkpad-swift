@@ -333,6 +333,8 @@ final class IndexingViewModel {
                 progress = Double(processedFiles) / Double(totalFiles)
             }
             currentDocument = "Done! Embedded \(toEmbed.count) chunks."
+            // 16.6: Prune feedback records whose chunk_id no longer exists after re-indexing
+            try await database.cleanOrphanedFeedback()
             // Track embedded document IDs for optional collection assignment (Task 13.7)
             lastEmbeddedDocumentIDs = Array(bySource.keys)
             if !collections.isEmpty {
