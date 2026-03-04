@@ -538,6 +538,25 @@ final class ChatViewModel {
         }
     }
 
+    // MARK: - Chunk Feedback
+
+    /// Persists a feedback signal for a chunk and updates local retrieved-chunks state.
+    /// Pass `.neutral` to clear any existing feedback (reverts to 1.0× score multiplier).
+    ///
+    /// The DB write is async (actor hop to DatabaseService); the local `retrievedChunks`
+    /// update happens on MainActor immediately after so the UI re-renders without delay.
+    func setChunkFeedback(chunkId: String, type: FeedbackType) async {
+        do {
+            try await database.connect()
+            try await database.setChunkFeedback(chunkId: chunkId, type: type)
+            if let index = retrievedChunks.firstIndex(where: { $0.id == chunkId }) {
+                retrievedChunks[index].feedbackType = (type == .neutral) ? nil : type
+            }
+        } catch {
+            self.error = "Failed to save feedback: \(error.localizedDescription)"
+        }
+    }
+
     /// True when the user has toggled chunks since the last assistant response,
     /// signalling the Regenerate button should appear.
     var hasChunkSelectionChanged: Bool {

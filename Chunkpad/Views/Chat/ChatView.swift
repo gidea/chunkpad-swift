@@ -254,6 +254,8 @@ struct ChatView: View {
                         ForEach(viewModel.retrievedChunks) { scored in
                             ChunkPreview(scoredChunk: scored) {
                                 viewModel.toggleChunk(id: scored.id)
+                            } onFeedback: { type in
+                                Task { await viewModel.setChunkFeedback(chunkId: scored.id, type: type) }
                             }
                             .frame(width: 260)
                         }
@@ -291,6 +293,19 @@ struct ChatView: View {
                 Text("· \(viewModel.droppedChunkCount) trimmed to fit budget")
                     .font(.caption)
                     .foregroundStyle(.orange)
+            }
+
+            // Task 16.4: Feedback signal counts — confirms signals are active
+            let boostedCount = viewModel.retrievedChunks.filter { $0.feedbackType == .boost }.count
+            let hiddenCount = viewModel.retrievedChunks.filter { $0.feedbackType == .hide }.count
+            if boostedCount > 0 || hiddenCount > 0 {
+                let parts = [
+                    boostedCount > 0 ? "\(boostedCount) boosted" : nil,
+                    hiddenCount > 0 ? "\(hiddenCount) hidden" : nil
+                ].compactMap { $0 }
+                Text("· " + parts.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
