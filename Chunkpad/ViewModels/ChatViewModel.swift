@@ -109,6 +109,21 @@ final class ChatViewModel {
     /// Number of chunks auto-dropped from the last context build due to token budget.
     var droppedChunkCount = 0
 
+    // MARK: - Context Preview (Epic 14)
+
+    /// Chunks retrieved via search-before-send. Displayed in the search panel;
+    /// transferred to `retrievedChunks` when the user sends the message.
+    var previewChunks: [ScoredChunk] = []
+
+    /// True while the search-before-send embed+query pipeline is running.
+    var isSearchingPreview = false
+
+    /// Derived: true when the search panel has loaded results and the preview is visible.
+    var isPreviewActive: Bool { !previewChunks.isEmpty }
+
+    /// Number of chunks currently marked as included in the preview.
+    var previewIncludedCount: Int { previewChunks.filter(\.isIncluded).count }
+
     // MARK: - Pin Documents State
 
     /// When true, the pin-documents sheet is presented.
@@ -165,6 +180,7 @@ final class ChatViewModel {
             currentConversationId = id
             messages = msgs
             retrievedChunks.removeAll()
+            clearPreview() // 14.8: switching conversations collapses the search panel
             error = nil
         } catch {
             self.error = "Failed to load conversation: \(error.localizedDescription)"
@@ -471,6 +487,108 @@ final class ChatViewModel {
         }
     }
 
+    // MARK: - Context Preview (Epic 14)
+
+    /// Runs embed → hybridSearch → addPinnedChunks WITHOUT dispatching to the LLM.
+    /// Results populate `previewChunks`; the search panel in ChatView auto-expands
+    /// because `isPreviewActive` becomes true.
+    func searchWithoutSend(query: String) async {
+        guard !query.isEmpty,
+              (appState?.indexedDocumentCount ?? 0) > 0 else { return }
+
+        isSearchingPreview = true
+        defer { isSearchingPreview = false }
+
+        do {
+            try await database.connect()
+            try await embedder.ensureModelReady()
+            let queryEmbedding = try await embedder.embedQuery(query)
+            let k = max(1, min(appState?.searchResultCount ?? 10, 20))
+            let minScore = max(0.0, min(appState?.searchMinScore ?? 0.1, 1.0))
+            var chunks = try await database.hybridSearch(
+                queryEmbedding: queryEmbedding,
+                queryText: query,
+                k: k,
+                minScore: minScore,
+                collectionId: appState?.selectedCollectionId
+            )
+            try await addPinnedChunks(to: &chunks)
+            previewChunks = chunks
+        } catch {
+            self.error = "Search preview failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Sends using the already-retrieved `previewChunks`, skipping the embed/search steps.
+    /// Transfers `previewChunks` → `retrievedChunks`, then runs buildContext → LLM stream.
+    /// Falls back to the full `sendMessage` pipeline if `previewChunks` is empty.
+    func sendWithPreview(_ text: String, provider: LLMProvider) async {
+        guard !text.isEmpty, !previewChunks.isEmpty else {
+            await sendMessage(text, provider: provider)
+            return
+        }
+
+        if currentConversationId == nil {
+            await createNewConversation()
+            guard currentConversationId != nil else { return }
+        }
+
+        let userMessage = Message(role: .user, content: text)
+        messages.append(userMessage)
+        if let cid = currentConversationId {
+            await persistMessage(userMessage, conversationId: cid)
+            if messages.count == 1 {
+                let title = String(text.prefix(50))
+                let trimmed = title.count < text.count ? title + "…" : title
+                await persistConversationTitle(trimmed, conversationId: cid)
+            }
+            await refreshConversations()
+        }
+        error = nil
+
+        // Transfer preview → retrieved; collapse panel (14.8)
+        retrievedChunks = previewChunks
+        clearPreview()
+
+        let contextMessages = buildContext(scoredChunks: retrievedChunks, query: text)
+        let client = LLMServiceFactory.client(for: provider)
+        let includedChunks = retrievedChunks.filter(\.isIncluded)
+        let assistantMessage = Message(
+            role: .assistant,
+            content: "",
+            referencedChunkIDs: includedChunks.map(\.id)
+        )
+        messages.append(assistantMessage)
+        let assistantIndex = messages.count - 1
+
+        lastUserQuery = text
+        pendingRetryProvider = provider
+
+        runGeneration(client: client, contextMessages: contextMessages, assistantIndex: assistantIndex)
+        await generationTask?.value
+    }
+
+    /// Clears all search preview state and collapses the panel.
+    /// Called on send, explicit dismiss, and conversation switch (14.8).
+    func clearPreview() {
+        previewChunks.removeAll()
+    }
+
+    /// Toggles a chunk's `isIncluded` flag in the PREVIEW list (before send).
+    func togglePreviewChunk(id: String) {
+        if let index = previewChunks.firstIndex(where: { $0.id == id }) {
+            previewChunks[index].isIncluded.toggle()
+        }
+    }
+
+    /// Marks all chunks from a given source path as excluded in the preview.
+    /// Used by the "Remove document" button in the grouped panel view (14.3).
+    func removePreviewDocument(sourcePath: String) {
+        for index in previewChunks.indices where previewChunks[index].chunk.sourcePath == sourcePath {
+            previewChunks[index].isIncluded = false
+        }
+    }
+
     // MARK: - Context Building
 
     /// Builds LLM context from only the *included* scored chunks.
@@ -738,5 +856,6 @@ final class ChatViewModel {
         messages.removeAll()
         retrievedChunks.removeAll()
         error = nil
+        clearPreview() // 14.8: clear preview on conversation reset
     }
 }

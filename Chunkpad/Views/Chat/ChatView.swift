@@ -6,6 +6,12 @@ struct ChatView: View {
     @Bindable var viewModel: ChatViewModel
     @State private var inputText = ""
     @State private var isChunksBarCollapsed = false
+    // Task 14.2: search panel display state
+    @State private var isSearchPanelExpanded = false
+    // Task 14.3: flat vs grouped view toggle
+    @State private var previewGrouped = false
+    // Task 14.4: client-side relevance filter (initialised from appState.searchMinScore in .task)
+    @State private var previewMinScore: Double = 0.0
     /// Timer that fires during streaming to auto-scroll to the bottom.
     private let streamingScrollTimer = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
 
@@ -43,10 +49,16 @@ struct ChatView: View {
         .navigationTitle("Chat")
         // Task 13.5: Load collections for scope picker and persist scope changes
         .task {
+            previewMinScore = appState.searchMinScore   // 14.4: init slider from settings
             await viewModel.refreshCollections()
         }
         .onChange(of: appState.selectedCollectionId) {
             appState.saveToUserProfile()
+        }
+        .onChange(of: viewModel.isPreviewActive) { _, active in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isSearchPanelExpanded = active
+            }
         }
         // Llama download offer dialog
         .alert("No LLM Provider Configured", isPresented: $viewModel.showLlamaOffer) {
@@ -192,7 +204,7 @@ struct ChatView: View {
     private var bottomBar: some View {
         GlassEffectContainer(spacing: GlassTokens.Spacing.containerFlush) {
             VStack(spacing: 0) {
-                // Retrieved chunks preview (collapsible)
+                // Post-response chunks preview (collapsible) — shown after a message is sent
                 if !viewModel.retrievedChunks.isEmpty {
                     if isChunksBarCollapsed {
                         collapsedChunksSummary
@@ -205,6 +217,11 @@ struct ChatView: View {
                             regenerateBar
                         }
                     }
+                }
+
+                // Task 14.2: Pre-send search panel — shown when preview chunks are loaded
+                if viewModel.isPreviewActive {
+                    searchPanel
                 }
 
                 inputBar
@@ -343,6 +360,9 @@ struct ChatView: View {
             // 7.4: Always-visible pin button for pre-query document pinning
             pinButton
 
+            // Task 14.1: Search-before-send button
+            searchPreviewButton
+
             TextField("Ask about your documents...", text: $inputText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
@@ -357,10 +377,18 @@ struct ChatView: View {
                     sendMessage()
                 }
             } label: {
-                Image(systemName: viewModel.isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                    .font(.title2)
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(width: 36, height: 36)
+                if viewModel.isPreviewActive && !viewModel.isGenerating {
+                    // Task 14.1: Show chunk count on send button when preview is loaded
+                    Label("Send · \(viewModel.previewIncludedCount)", systemImage: "arrow.up.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .frame(height: 36)
+                } else {
+                    Image(systemName: viewModel.isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
+                        .font(.title2)
+                        .symbolRenderingMode(.hierarchical)
+                        .frame(width: 36, height: 36)
+                }
             }
             .buttonStyle(.glass)
             .disabled(!viewModel.isGenerating && inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -459,6 +487,259 @@ struct ChatView: View {
         }
     }
 
+    // MARK: - Search Preview Button (Task 14.1)
+
+    /// Magnifyingglass button in the input bar that triggers search-before-send.
+    private var searchPreviewButton: some View {
+        Button {
+            let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return }
+            Task { await viewModel.searchWithoutSend(query: query) }
+        } label: {
+            ZStack {
+                Image(systemName: "magnifyingglass")
+                    .font(.body)
+                    .frame(width: 32, height: 32)
+                    .opacity(viewModel.isSearchingPreview ? 0 : 1)
+                if viewModel.isSearchingPreview {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 32, height: 32)
+                }
+            }
+        }
+        .buttonStyle(.glass)
+        .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                  || viewModel.isSearchingPreview
+                  || viewModel.isGenerating)
+        .help("Preview which chunks will be retrieved without sending")
+    }
+
+    // MARK: - Search Panel (Tasks 14.2, 14.3, 14.4)
+
+    /// Collapsible panel showing pre-send search results with inline controls.
+    private var searchPanel: some View {
+        VStack(spacing: 0) {
+            searchPanelHeader
+
+            if isSearchPanelExpanded {
+                Divider()
+                    .opacity(0.3)
+
+                // Task 14.4: relevance slider + re-search button
+                relevanceControls
+
+                // Token budget progress bar
+                tokenBudgetBar
+
+                // Task 14.3: flat or grouped chunk list
+                if previewGrouped {
+                    groupedChunkList
+                } else {
+                    flatPreviewList
+                }
+            }
+        }
+    }
+
+    /// Header row: collapse chevron, summary text, flat/group toggle, dismiss button.
+    private var searchPanelHeader: some View {
+        let visible = viewModel.previewChunks.filter { $0.relevanceScore >= previewMinScore }
+        let includedCount = visible.filter(\.isIncluded).count
+        let totalTokens = visible.filter(\.isIncluded)
+            .reduce(0) { $0 + max(1, $1.chunk.content.count / 4) }
+        let docCount = Set(visible.map(\.chunk.sourcePath)).count
+
+        return HStack(spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSearchPanelExpanded.toggle()
+                }
+            } label: {
+                Image(systemName: isSearchPanelExpanded ? "chevron.down" : "chevron.up")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Image(systemName: "magnifyingglass")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text("\(docCount) doc\(docCount == 1 ? "" : "s") · \(includedCount)/\(visible.count) chunks · ~\(totalTokens.formatted()) tokens")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            // Task 14.3: segmented flat/grouped toggle
+            Picker("View", selection: $previewGrouped) {
+                Image(systemName: "list.bullet").tag(false)
+                Image(systemName: "square.stack").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 64)
+            .controlSize(.mini)
+
+            // Dismiss the preview panel
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.clearPreview()
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("Clear search preview")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    /// Task 14.4: Min-relevance slider + Re-search button.
+    private var relevanceControls: some View {
+        HStack(spacing: 10) {
+            Text("Min relevance: \(previewMinScore, specifier: "%.2f")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+
+            Slider(value: $previewMinScore, in: 0.0...1.0, step: 0.05)
+
+            Button("Re-search") {
+                let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !query.isEmpty else { return }
+                Task { await viewModel.searchWithoutSend(query: query) }
+            }
+            .buttonStyle(.glass)
+            .controlSize(.small)
+            .font(.caption.weight(.medium))
+            .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      || viewModel.isSearchingPreview)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+    }
+
+    /// Colour-coded token budget bar (green < 75%, orange < 90%, red >= 90%).
+    private var tokenBudgetBar: some View {
+        let budget = Int(Double(appState.contextSize) * 0.8)
+        let used = viewModel.previewChunks
+            .filter { $0.isIncluded && $0.relevanceScore >= previewMinScore }
+            .reduce(0) { $0 + max(1, $1.chunk.content.count / 4) }
+        let fraction = min(1.0, Double(used) / Double(max(1, budget)))
+        let barColor: Color = fraction < 0.75 ? .green : fraction < 0.9 ? .orange : .red
+
+        return HStack(spacing: 8) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.08)).frame(height: 4)
+                    Capsule()
+                        .fill(barColor)
+                        .frame(width: max(4, geo.size.width * fraction), height: 4)
+                }
+            }
+            .frame(height: 4)
+
+            Text("\(used.formatted())/\(budget.formatted()) tok")
+                .font(.caption2)
+                .foregroundStyle(fraction < 0.75 ? AnyShapeStyle(.secondary) : fraction < 0.9 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.red))
+                .frame(width: 90, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
+    }
+
+    /// Flat horizontal scroll of ChunkPreview cards, filtered by relevance slider.
+    private var flatPreviewList: some View {
+        let visible = viewModel.previewChunks.filter { $0.relevanceScore >= previewMinScore }
+        return ScrollView(.horizontal, showsIndicators: false) {
+            GlassEffectContainer(spacing: GlassTokens.Spacing.containerDefault) {
+                HStack(spacing: GlassTokens.Spacing.containerDefault) {
+                    ForEach(visible) { scored in
+                        ChunkPreview(scoredChunk: scored) {
+                            viewModel.togglePreviewChunk(id: scored.id)
+                        } onFeedback: { type in
+                            Task { await viewModel.setChunkFeedback(chunkId: scored.id, type: type) }
+                        }
+                        .frame(width: 260)
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .frame(maxHeight: 200)
+    }
+
+    /// Task 14.3: Vertical scroll of document-level groups, each with a horizontal chunk row.
+    private var groupedChunkList: some View {
+        let visible = viewModel.previewChunks.filter { $0.relevanceScore >= previewMinScore }
+        let groups = Dictionary(grouping: visible, by: \.chunk.sourcePath)
+        let sortedPaths = groups.keys.sorted()
+
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 6) {
+                ForEach(sortedPaths, id: \.self) { path in
+                    if let chunks = groups[path] {
+                        documentGroupRow(sourcePath: path, chunks: chunks)
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .frame(maxHeight: 200)
+    }
+
+    /// One document header + horizontal chunk strip, with a "Remove" button (14.3).
+    private func documentGroupRow(sourcePath: String, chunks: [ScoredChunk]) -> some View {
+        let includedCount = chunks.filter(\.isIncluded).count
+        let totalTokens = chunks.filter(\.isIncluded)
+            .reduce(0) { $0 + max(1, $1.chunk.content.count / 4) }
+        let fileName = URL(fileURLWithPath: sourcePath).lastPathComponent
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: "doc.text")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(fileName)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                Text("· \(includedCount)/\(chunks.count) · ~\(totalTokens.formatted()) tok")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Remove") {
+                    viewModel.removePreviewDocument(sourcePath: sourcePath)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .font(.caption)
+            }
+            .padding(.horizontal, 8)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: GlassTokens.Spacing.containerDefault) {
+                    ForEach(chunks) { scored in
+                        ChunkPreview(scoredChunk: scored) {
+                            viewModel.togglePreviewChunk(id: scored.id)
+                        } onFeedback: { type in
+                            Task { await viewModel.setChunkFeedback(chunkId: scored.id, type: type) }
+                        }
+                        .frame(width: 240)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+            }
+        }
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.card))
+    }
+
     // MARK: - Actions
 
     private func regenerate() {
@@ -494,7 +775,12 @@ struct ChatView: View {
         // 1. If a cloud or bundled Llama provider is configured, use it directly
         if let provider = appState.resolvedProvider() {
             Task {
-                await viewModel.sendMessage(text, provider: provider)
+                // Task 14.1: use preview chunks if the search panel is loaded
+                if viewModel.isPreviewActive {
+                    await viewModel.sendWithPreview(text, provider: provider)
+                } else {
+                    await viewModel.sendMessage(text, provider: provider)
+                }
             }
             return
         }
@@ -503,7 +789,11 @@ struct ChatView: View {
         if viewModel.isBundledLLMReady {
             let provider = viewModel.makeBundledProvider()
             Task {
-                await viewModel.sendMessage(text, provider: provider)
+                if viewModel.isPreviewActive {
+                    await viewModel.sendWithPreview(text, provider: provider)
+                } else {
+                    await viewModel.sendMessage(text, provider: provider)
+                }
             }
             return
         }
