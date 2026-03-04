@@ -18,7 +18,7 @@ struct ProcessingResult: Identifiable {
 /// without downloading the embedding model or writing to the database — useful for
 /// verifying extraction and chunking before re-enabling full indexing.
 ///
-/// The embedding model (bge-base-en-v1.5, ~438 MB) is NOT bundled with the app.
+/// The embedding model (bge-large-en-v1.5, ~1.3 GB) is NOT bundled with the app.
 /// It's downloaded automatically only when the user first triggers indexing.
 @Observable
 @MainActor
@@ -61,7 +61,12 @@ final class IndexingViewModel {
     /// IDs of chunks that have been embedded into the vector DB. Loaded from DB.
     var embeddedChunkIDs: Set<String> = []
     /// Modified chunk file URLs (for change detection). Key: file path, value: last known modification date.
-    var lastKnownModificationDates: [String: Date] = [:]
+    var lastKnownModificationDates: [String: Date] = [:] {
+        didSet {
+            if !isLoadingPersistedDates { persistModificationDates() }
+        }
+    }
+    private var isLoadingPersistedDates = false
     /// Whether modified chunk files have been detected (prompt user to re-embed).
     var hasModifiedChunkFiles = false
     /// User toggles for include/exclude. Nil = use default (embedded means included, else true).
@@ -91,7 +96,34 @@ final class IndexingViewModel {
     /// and reading chunking settings.
     var appState: AppState?
 
-    init() {}
+    private static let modDatesKey = "indexing_last_known_modification_dates"
+
+    init() {
+        loadPersistedModificationDates()
+    }
+
+    private func loadPersistedModificationDates() {
+        guard let dict = UserDefaults.standard.dictionary(forKey: Self.modDatesKey) as? [String: Double] else { return }
+        var dates: [String: Date] = [:]
+        for (path, interval) in dict {
+            dates[path] = Date(timeIntervalSinceReferenceDate: interval)
+        }
+        isLoadingPersistedDates = true
+        lastKnownModificationDates = dates
+        isLoadingPersistedDates = false
+    }
+
+    private func persistModificationDates() {
+        if lastKnownModificationDates.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.modDatesKey)
+        } else {
+            var dict: [String: Double] = [:]
+            for (path, date) in lastKnownModificationDates {
+                dict[path] = date.timeIntervalSinceReferenceDate
+            }
+            UserDefaults.standard.set(dict, forKey: Self.modDatesKey)
+        }
+    }
 
     /// Connects to the database if not already connected this session.
     /// Avoids repeated actor hops when the connection is already established.
@@ -237,115 +269,6 @@ final class IndexingViewModel {
 
     // MARK: - Index Folder (Full Pipeline — Embed + DB)
 
-    /// Opens NSOpenPanel, lets user select a folder, then indexes all supported documents.
-    /// Downloads the embedding model on first run if needed.
-    func selectAndIndexFolder() async {
-        guard !isIndexing else { return }
-
-        // Show folder picker
-        guard let result = await pickFolder() else { return }
-
-        await indexFolder(at: result.url)
-    }
-
-    /// Index all documents in a given folder (full pipeline: embed + DB).
-    func indexFolder(at url: URL) async {
-        isIndexing = true
-        error = nil
-        progress = 0
-        processedFiles = 0
-
-        let chunkSizeChars = appState?.chunkSizeChars ?? DocumentProcessor.defaultChunkSizeChars
-        let overlapChars = appState?.chunkOverlapChars ?? DocumentProcessor.defaultOverlapChars
-
-        do {
-            // 1. Connect to database
-            try await ensureDatabaseConnected()
-
-            // 2. Download & load embedding model (lazy — only downloads if not cached)
-            currentDocument = "Preparing embedding model..."
-            isDownloadingModel = true
-
-            // Set up status callback to bridge actor → MainActor
-            await embedder.setStatusCallback { [weak self] status in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.appState?.embeddingModelStatus = status
-
-                    if case .downloading(let p) = status {
-                        self.modelDownloadProgress = p
-                        self.currentDocument = "Downloading embedding model... \(Int(p * 100))%"
-                    } else if case .loading = status {
-                        self.currentDocument = "Loading embedding model into memory..."
-                    }
-                }
-            }
-
-            try await embedder.ensureModelReady()
-            isDownloadingModel = false
-
-            // 3. Discover & parse all documents in the folder
-            currentDocument = "Scanning folder..."
-            let fileChunks = try await processor.processDirectory(
-                at: url,
-                chunkSizeChars: chunkSizeChars,
-                overlapChars: overlapChars
-            )
-            totalFiles = fileChunks.count
-
-            guard totalFiles > 0 else {
-                currentDocument = "No supported documents found."
-                isIndexing = false
-                return
-            }
-
-            // 4. Process each file: embed all chunks, then insert document + chunks atomically
-            for (fileURL, chunks) in fileChunks {
-                currentDocument = fileURL.lastPathComponent
-                let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
-
-                let docType = IndexedDocument.DocumentType(fromExtension: fileURL.pathExtension)
-                let document = IndexedDocument(
-                    fileName: fileURL.lastPathComponent,
-                    filePath: fileURL.path,
-                    documentType: docType,
-                    chunkCount: chunks.count,
-                    fileSize: fileSize
-                )
-
-                var chunksWithEmbeddings: [(Chunk, [Float])] = []
-                for chunk in chunks {
-                    let embedding = try await embedder.embed(chunk.content)
-                    let chunkModel = Chunk(
-                        title: chunk.title,
-                        content: chunk.content,
-                        documentType: chunk.documentType,
-                        slideNumber: chunk.slideNumber,
-                        sourcePath: chunk.sourcePath
-                    )
-                    chunksWithEmbeddings.append((chunkModel, embedding))
-                }
-                try await database.insertDocumentWithChunks(document: document, chunksWithEmbeddings: chunksWithEmbeddings)
-
-                processedFiles += 1
-                progress = Double(processedFiles) / Double(totalFiles)
-            }
-
-            currentDocument = "Done! Indexed \(totalFiles) documents."
-
-            // Update global document count so ChatViewModel knows documents are available
-            if let appState {
-                appState.indexedDocumentCount = (appState.indexedDocumentCount) + totalFiles
-            }
-        } catch {
-            self.error = error.localizedDescription
-            currentDocument = "Error: \(error.localizedDescription)"
-            isDownloadingModel = false
-        }
-
-        isIndexing = false
-    }
-
     // MARK: - Embed Chunks
 
     func embedApprovedChunks(from reviewableChunks: [ReviewableChunk]) async {
@@ -469,6 +392,32 @@ final class IndexingViewModel {
         return result
     }
 
+    /// 2.4.3: Computes aggregate embedding status for all files inside a folder (recursively).
+    func folderAggregateStatus(for folder: ChunkFolderNode) -> FileEmbeddingStatus {
+        var fileStatuses: [FileEmbeddingStatus] = []
+        collectFileStatuses(from: folder, into: &fileStatuses)
+        guard !fileStatuses.isEmpty else { return .noneEmbedded }
+
+        let allEmbedded = fileStatuses.allSatisfy { $0 == .allEmbedded }
+        if allEmbedded { return .allEmbedded }
+
+        let anyEmbedded = fileStatuses.contains { $0 == .allEmbedded || $0 == .partiallyEmbedded }
+        if anyEmbedded { return .partiallyEmbedded }
+
+        return .noneEmbedded
+    }
+
+    private func collectFileStatuses(from folder: ChunkFolderNode, into statuses: inout [FileEmbeddingStatus]) {
+        for child in folder.children {
+            switch child {
+            case .file(let fileNode):
+                statuses.append(fileAggregateStatus(for: fileNode.fileInfo))
+            case .folder(let subFolder):
+                collectFileStatuses(from: subFolder, into: &statuses)
+            }
+        }
+    }
+
     /// Computes aggregate embedding status for a file's chunks.
     func fileAggregateStatus(for fileInfo: ChunkFileInfo) -> FileEmbeddingStatus {
         let chunks = reviewableChunks(for: fileInfo)
@@ -521,6 +470,38 @@ final class IndexingViewModel {
             return try await database.listDocuments()
         } catch {
             return []
+        }
+    }
+
+    // MARK: - Delete Documents / Chunks
+
+    /// Notification posted after a document is deleted so other parts of the app can react (e.g. clean up stale pins).
+    static let documentDeletedNotification = Notification.Name("IndexingViewModel.documentDeleted")
+
+    /// Deletes a single document and all its chunks from the database.
+    func deleteDocument(id: String) async {
+        guard !isIndexing else { return }
+        do {
+            try await ensureDatabaseConnected()
+            try await database.deleteDocument(id: id)
+            if let appState {
+                appState.indexedDocumentCount = (try? await database.documentCount()) ?? 0
+            }
+            NotificationCenter.default.post(name: Self.documentDeletedNotification, object: nil)
+        } catch {
+            self.error = "Failed to delete document: \(error.localizedDescription)"
+        }
+    }
+
+    /// Deletes a single chunk from the database.
+    func deleteChunk(id: String) async {
+        guard !isIndexing else { return }
+        do {
+            try await ensureDatabaseConnected()
+            try await database.deleteChunk(id: id)
+            embeddedChunkIDs.remove(id)
+        } catch {
+            self.error = "Failed to delete chunk: \(error.localizedDescription)"
         }
     }
 

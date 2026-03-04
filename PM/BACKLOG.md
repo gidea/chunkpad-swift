@@ -21,98 +21,24 @@
 
 ---
 
-## Epic 2: Documents Library (partial)
+## Completed Epics
 
-**Goal:** Robust document management — browsable, searchable, fully lifecycle-managed.
+All epics through Epic 12 (Sprints 1–13) are complete. See `DONE.md` for full history.
 
-| Task | Priority | Notes |
+| Epic | Focus | Sprints |
 |---|---|---|
-| 2.3 Chunk grid/list view overhaul | P1 | View mode toggle, grid cards, filter bar |
-| 2.5.1 Persist lastKnownModificationDates to DB | P2 | Currently lost on restart |
-| 2.6 Delete individual documents/chunks | P2 | Context menu, cascade delete |
-| 2.4.3 Per-folder aggregate status badge | P3 | Depends on 2.3 folder list |
+| Epic 2 | Documents Library | Sprints 2, 8, 11 |
+| Epic 3 | Model Download Management | Sprint 5 |
+| Epic 4 | Chat & RAG Pipeline | Sprints 4, 8, 9 |
+| Epic 5 | Settings & Configuration | Sprints 7, 10 |
+| Epic 6 | Error Handling & Resilience | Sprint 6 |
+| Epic 7 | Polish & UX | Sprints 7, 9, 10 |
+| Epic 8 | Code Quality & Cleanup | Sprint 9 |
+| Epic 9 | UX Robustness & Feedback | Sprint 10 |
+| Epic 10 | Embedding Model Upgrade | Sprint 12 |
+| Epic 11 | Chunk File Naming Fix | Sprint 12 |
+| Epic 12 | Document Parsing & Chunking | Sprint 13 |
 
 ---
 
-## Epic 3: Model Download Management ✅ (Sprint 5 complete)
-
-**Goal:** Transparent, resilient, cancellable model downloads with cache management.
-
-*All Sprint 5 tasks shipped. See `DONE.md` Sprint 5 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~3.1.6 Guard in BundledLLMService.downloadAndLoad~~ | ~~P1~~ | ✅ Done |
-| ~~3.2 Download cancellation~~ | ~~P1~~ | ✅ Done — cancelDownload(), Cancel button in Settings |
-| ~~3.3 Download retry logic~~ | ~~P1~~ | ✅ Done — 3× backoff, .retrying status |
-| ~~3.5 Cache management UI~~ | ~~P1~~ | ✅ Done — size display, Clear Cache buttons |
-| ~~3.6 Cache integrity verification~~ | ~~P2~~ | ✅ Done — on-launch check, Verify Cache button |
-| ~~3.4 Disk space validation~~ | ~~P2~~ | ✅ Done — pre-check before download |
-| ~~3.7.1–3.7.2 Callback cleanup~~ | ~~P2~~ | ✅ Done — clearStatusCallback() on both services |
-
----
-
-## Epic 4: Chat & RAG Pipeline (partial)
-
-**Goal:** Reliable chat with correct RAG, context management, and resilient streaming.
-
-| Task | Priority | Notes |
-|---|---|---|
-| 4.2.3 Throttled streaming scroll | P2 | Per-token auto-scroll throttle |
-| 4.4.4 Auto-truncate context to budget | P2 | Chunk by relevance until contextSize |
-| 4.6 Persist pinned document IDs | P2 | UserDefaults, validate on load |
-| 4.7 Conversation management UX | P2 | Swipe-delete, title edit, count |
-
----
-
-## Epic 5: Settings & Configuration
-
-**Goal:** All configurable params exposed, validated, clearly connected to features.
-
-| Task | Priority | Notes |
-|---|---|---|
-| 5.1 Configurable search parameters (k, minScore) | P1 | Hardcoded today |
-| 5.2 API key validation ("Test" button) | P2 | Anthropic, OpenAI, Ollama |
-| 5.3 Configurable LLM parameters (temp, maxTokens) | P2 | Hardcoded in BundledLLMService |
-| 5.4 Database management in Settings | P3 | Size, count, clear, export |
-
----
-
-## Epic 6: Error Handling & Resilience ✅ (Sprint 6 complete)
-
-**Goal:** Every error visible to user with a clear recovery path. No silent failures.
-
-*All Sprint 6 tasks shipped. See `DONE.md` Sprint 6 for details.*
-
-| Task | Priority | Notes |
-|---|---|---|
-| ~~6.1 App initialization error handling~~ | ~~P0~~ | ✅ Done — AppState.initError, MainView banner + Retry |
-| ~~6.2 Embedding model error recovery~~ | ~~P1~~ | ✅ Done — Clear Cache & Retry button in DocumentsView |
-| ~~6.3.4 Retry individual parse-failed files~~ | ~~P2~~ | ✅ Done — skippedFiles list with per-file Retry buttons |
-| ~~6.4 Network error handling for LLM streaming~~ | ~~P2~~ | ✅ Done — connectionLost/rateLimited classification + Retry |
-
----
-
-## Epic 7: Polish & UX
-
-**Goal:** Quality-of-life improvements that make the app feel polished.
-
-| Task | Priority | Notes |
-|---|---|---|
-| 7.1 Markdown rendering for assistant responses | P2 | AttributedString or SwiftUI markdown |
-| 7.2 Distinguish pinned chunks visually | P2 | Pin icon, distinct card style |
-| 7.5 Generation mode indicator (dot per provider) | P3 | Green = configured, gray = not |
-| 7.3 Collapsible chunks bar | P3 | Chevron toggle, compact summary |
-| 7.4 Pre-query document pinning | P3 | Always-visible pin button |
-| 7.6 Update README.md project structure | P2 | Add new files to structure diagram |
-
----
-
-## Recommended Sprint Order
-
-| Sprint | Focus | Key Tasks |
-|---|---|---|
-| ~~**Sprint 5**~~ | ~~Model Management~~ | ✅ Complete |
-| ~~**Sprint 6**~~ | ~~Error Handling~~ | ✅ Complete |
-| **Sprint 7** | Settings + Polish | 5.1, 5.2, 5.3, 7.1, 7.2 |
-| **Sprint 8** | Documents Polish | 2.3, 2.5.1, 2.6, 4.6, 4.7 |
+*No pending epics. Add new epics below as they are identified.*

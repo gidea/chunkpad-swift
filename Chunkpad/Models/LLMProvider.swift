@@ -20,11 +20,16 @@ struct CloudConfig: Sendable {
     let provider: CloudProvider
     let apiKey: String
     let model: String
+    let temperature: Double
+    let maxTokens: Int
 
-    init(provider: CloudProvider, apiKey: String, model: String? = nil) {
+    init(provider: CloudProvider, apiKey: String, model: String? = nil,
+         temperature: Double = 0.7, maxTokens: Int = 4096) {
         self.provider = provider
         self.apiKey = apiKey
         self.model = model ?? provider.defaultModel
+        self.temperature = temperature
+        self.maxTokens = maxTokens
     }
 }
 
@@ -81,12 +86,17 @@ struct LocalConfig: Sendable {
     let endpoint: String
     let modelName: String
     let contextSize: Int
+    let temperature: Double
+    let maxTokens: Int
 
-    init(provider: LocalProvider, endpoint: String = "", modelName: String = "", contextSize: Int = 4096) {
+    init(provider: LocalProvider, endpoint: String = "", modelName: String = "",
+         contextSize: Int = 4096, temperature: Double = 0.7, maxTokens: Int = 2048) {
         self.provider = provider
         self.endpoint = endpoint.isEmpty ? provider.defaultEndpoint : endpoint
         self.modelName = modelName.isEmpty ? provider.defaultModel : modelName
         self.contextSize = contextSize
+        self.temperature = temperature
+        self.maxTokens = maxTokens
     }
 }
 

@@ -1,4 +1,7 @@
 import SwiftUI
+import os.log
+
+private let logger = Logger(subsystem: "com.chunkpad", category: "ChatViewModel")
 
 /// A persisted chat conversation (metadata only; messages are stored separately).
 /// Declared here so the @Observable macro expansion can resolve the type.
@@ -7,6 +10,7 @@ struct Conversation: Identifiable, Sendable {
     let title: String
     let createdAt: Date
     let updatedAt: Date
+    var messageCount: Int = 0
 }
 
 // MARK: - Streaming Error Kind
@@ -51,7 +55,7 @@ enum StreamingErrorKind: Equatable {
 /// 6. Stream response from selected LLM (cloud or bundled Llama)
 ///
 /// Model download rules:
-/// - Embedding model (bge-base-en-v1.5): downloaded ONLY during document indexing, never here.
+/// - Embedding model (bge-large-en-v1.5): downloaded ONLY during document indexing, never here.
 /// - Llama 3.2: downloaded ONLY when user explicitly accepts the offer (no cloud API key).
 @Observable
 @MainActor
@@ -99,6 +103,9 @@ final class ChatViewModel {
     /// True after Llama 3.2 has been downloaded and loaded (from AppState, so Settings download is reflected).
     var isBundledLLMReady: Bool { appState?.bundledLLMStatus.isReady ?? false }
 
+    /// Number of chunks auto-dropped from the last context build due to token budget.
+    var droppedChunkCount = 0
+
     // MARK: - Pin Documents State
 
     /// When true, the pin-documents sheet is presented.
@@ -107,9 +114,14 @@ final class ChatViewModel {
     /// All indexed documents (fetched when the pin sheet opens).
     var indexedDocuments: [IndexedDocument] = []
 
-    /// IDs of documents the user has pinned. Pinned documents' chunks
-    /// are always included at the top of search results.
-    var pinnedDocumentIDs: Set<String> = []
+    /// IDs of documents the user has pinned. Backed by AppState for persistence.
+    var pinnedDocumentIDs: Set<String> {
+        get { appState?.pinnedDocumentIDs ?? [] }
+        set {
+            appState?.pinnedDocumentIDs = newValue
+            appState?.saveToUserProfile()
+        }
+    }
 
     // MARK: - Dependencies
 
@@ -160,10 +172,42 @@ final class ChatViewModel {
     func refreshConversations() async {
         guard let conversationDB else { return }
         do {
-            let list = try await conversationDB.fetchConversations(limit: 100)
+            var list = try await conversationDB.fetchConversations(limit: 100)
+            for i in list.indices {
+                list[i].messageCount = (try? await conversationDB.messageCount(conversationId: list[i].id)) ?? 0
+            }
             await MainActor.run { conversations = list }
         } catch {
             // Non-fatal; list stays as-is
+        }
+    }
+
+    /// Deletes a conversation from the chat DB.
+    func deleteConversation(id: String) async {
+        guard let conversationDB else { return }
+        do {
+            try await conversationDB.deleteConversation(id: id)
+            if currentConversationId == id {
+                currentConversationId = nil
+                messages.removeAll()
+                retrievedChunks.removeAll()
+            }
+            await refreshConversations()
+        } catch {
+            self.error = "Failed to delete conversation: \(error.localizedDescription)"
+        }
+    }
+
+    /// Renames a conversation.
+    func renameConversation(id: String, title: String) async {
+        guard let conversationDB else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try await conversationDB.updateConversation(id: id, title: trimmed, updatedAt: Date())
+            await refreshConversations()
+        } catch {
+            self.error = "Failed to rename conversation: \(error.localizedDescription)"
         }
     }
 
@@ -186,12 +230,12 @@ final class ChatViewModel {
         if !userMessageAlreadyAdded {
             let userMessage = Message(role: .user, content: text)
             messages.append(userMessage)
-            if let cid = currentConversationId, let conversationDB {
-                try? await conversationDB.insertMessage(userMessage, conversationId: cid)
-                if messages.count == 1, let convId = currentConversationId {
+            if let cid = currentConversationId {
+                await persistMessage(userMessage, conversationId: cid)
+                if messages.count == 1 {
                     let title = String(text.prefix(50))
                     let trimmed = title.count < text.count ? title + "…" : title
-                    try? await conversationDB.updateConversation(id: convId, title: trimmed, updatedAt: Date())
+                    await persistConversationTitle(trimmed, conversationId: cid)
                 }
                 await refreshConversations()
             }
@@ -223,11 +267,13 @@ final class ChatViewModel {
             let queryEmbedding = try await embedder.embedQuery(text)
 
             // 5. Hybrid search: vector KNN + full-text (with min-score threshold)
+            let k = max(1, min(appState?.searchResultCount ?? 10, 20))
+            let minScore = max(0.0, min(appState?.searchMinScore ?? 0.1, 1.0))
             var scoredChunks = try await database.hybridSearch(
                 queryEmbedding: queryEmbedding,
                 queryText: text,
-                k: 10,
-                minScore: 0.1
+                k: k,
+                minScore: minScore
             )
 
             // 5b. Merge pinned document chunks (boosted to score 1.0)
@@ -254,49 +300,7 @@ final class ChatViewModel {
             lastUserQuery = text
             pendingRetryProvider = provider
 
-            generationTask = Task {
-                isGenerating = true
-                streamingError = nil
-                defer {
-                    generationTask = nil
-                    isGenerating = false
-                }
-                do {
-                    for try await token in client.chatStream(messages: contextMessages) {
-                        if Task.isCancelled { break }
-                        messages[assistantIndex].content += token
-                    }
-                    if messages[assistantIndex].content.isEmpty && !Task.isCancelled {
-                        let fullResponse = try await client.chat(messages: contextMessages)
-                        messages[assistantIndex].content = fullResponse
-                    }
-                    if Task.isCancelled && !messages[assistantIndex].content.isEmpty {
-                        messages[assistantIndex].content += "\n\n(Stopped)"
-                    }
-                    if let cid = currentConversationId, let conversationDB {
-                        try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
-                        await refreshConversations()
-                    }
-                } catch is CancellationError {
-                    if !messages[assistantIndex].content.isEmpty {
-                        messages[assistantIndex].content += "\n\n(Stopped)"
-                    }
-                    if let cid = currentConversationId, let conversationDB {
-                        try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
-                        await refreshConversations()
-                    }
-                } catch {
-                    // 6.4: Classify the error and keep partial response visible
-                    let kind = classify(error)
-                    streamingError = kind
-                    self.error = kind.userMessage
-                    // Partial response is already in messages[assistantIndex].content — keep it
-                    if let cid = currentConversationId, let conversationDB {
-                        try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
-                        await refreshConversations()
-                    }
-                }
-            }
+            runGeneration(client: client, contextMessages: contextMessages, assistantIndex: assistantIndex)
             await generationTask?.value
 
         } catch {
@@ -316,8 +320,8 @@ final class ChatViewModel {
                     referencedChunkIDs: retrievedChunks.map(\.id)
                 )
                 messages.append(errMessage)
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(errMessage, conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(errMessage, conversationId: cid)
                     await refreshConversations()
                 }
             }
@@ -335,12 +339,12 @@ final class ChatViewModel {
         }
         let userMessage = Message(role: .user, content: text)
         messages.append(userMessage)
-        if let cid = currentConversationId, let conversationDB {
-            try? await conversationDB.insertMessage(userMessage, conversationId: cid)
+        if let cid = currentConversationId {
+            await persistMessage(userMessage, conversationId: cid)
             if messages.count == 1 {
                 let title = String(text.prefix(50))
                 let trimmed = title.count < text.count ? title + "…" : title
-                try? await conversationDB.updateConversation(id: cid, title: trimmed, updatedAt: Date())
+                await persistConversationTitle(trimmed, conversationId: cid)
             }
             await refreshConversations()
         }
@@ -386,7 +390,11 @@ final class ChatViewModel {
 
     /// Build an LLMProvider for the bundled Llama model.
     func makeBundledProvider() -> LLMProvider {
-        .local(LocalConfig(provider: .bundled))
+        .local(LocalConfig(
+            provider: .bundled,
+            temperature: appState?.llmTemperature ?? 0.7,
+            maxTokens: appState?.llmMaxTokens ?? 2048
+        ))
     }
 
     // MARK: - Pin Documents
@@ -412,6 +420,22 @@ final class ChatViewModel {
         }
     }
 
+    /// Remove pinned IDs that reference documents no longer in the database.
+    func validatePinnedDocuments() async {
+        guard !pinnedDocumentIDs.isEmpty else { return }
+        do {
+            try await database.connect()
+            let docs = try await database.listDocuments()
+            let validIDs = Set(docs.map(\.id))
+            let invalid = pinnedDocumentIDs.subtracting(validIDs)
+            if !invalid.isEmpty {
+                pinnedDocumentIDs = pinnedDocumentIDs.intersection(validIDs)
+            }
+        } catch {
+            // Non-fatal; keep existing pins
+        }
+    }
+
     /// Fetches chunks for all pinned documents and merges them into the
     /// current `retrievedChunks` with a high relevance score (1.0),
     /// avoiding duplicates.
@@ -424,7 +448,7 @@ final class ChatViewModel {
         for docID in pinnedDocumentIDs {
             let chunks = try await database.chunksForDocument(documentID: docID)
             for chunk in chunks where !existingIDs.contains(chunk.id) {
-                pinnedChunks.append(ScoredChunk(chunk: chunk, relevanceScore: 1.0))
+                pinnedChunks.append(ScoredChunk(chunk: chunk, relevanceScore: 1.0, isPinned: true))
             }
         }
         if !pinnedChunks.isEmpty {
@@ -435,8 +459,35 @@ final class ChatViewModel {
     // MARK: - Context Building
 
     /// Builds LLM context from only the *included* scored chunks.
+    /// Approximate token count for a string (chars / 4).
+    private func estimateTokens(_ text: String) -> Int {
+        max(1, text.count / 4)
+    }
+
     private func buildContext(scoredChunks: [ScoredChunk], query: String) -> [ChatMessage] {
-        let included = scoredChunks.filter(\.isIncluded)
+        var included = scoredChunks.filter(\.isIncluded)
+
+        // Auto-truncate: drop lowest-relevance non-pinned chunks until under budget.
+        // Reserve 20% of contextSize for the response.
+        let budget = Int(Double(appState?.contextSize ?? 4096) * 0.8)
+        let systemTokens = 80 // ~320 chars for system prompt
+        let queryTokens = estimateTokens(query) + 30 // overhead for "My question:" framing
+        var chunkTokens = included.reduce(0) { $0 + estimateTokens($1.chunk.content) + 10 }
+        var totalTokens = systemTokens + queryTokens + chunkTokens
+
+        droppedChunkCount = 0
+        while totalTokens > budget && included.count > 1 {
+            // Find lowest-relevance non-pinned chunk to drop
+            if let dropIndex = included.indices.reversed().first(where: { !included[$0].isPinned }) {
+                let dropped = included.remove(at: dropIndex)
+                chunkTokens -= estimateTokens(dropped.chunk.content) + 10
+                totalTokens = systemTokens + queryTokens + chunkTokens
+                droppedChunkCount += 1
+            } else {
+                break // All remaining chunks are pinned — cannot drop further
+            }
+        }
+
         var contextMessages: [ChatMessage] = []
 
         // System prompt
@@ -530,6 +581,14 @@ final class ChatViewModel {
         // Refresh retry context in case provider changed
         pendingRetryProvider = provider
 
+        runGeneration(client: client, contextMessages: contextMessages, assistantIndex: assistantIndex)
+        await generationTask?.value
+    }
+
+    /// Runs the streaming generation pipeline: stream tokens from the LLM, handle cancellation,
+    /// classify errors, and persist the assistant message to the conversation DB.
+    /// Shared by `sendMessage` and `regenerate` to eliminate duplication.
+    private func runGeneration(client: any LLMClient, contextMessages: [ChatMessage], assistantIndex: Int) {
         generationTask = Task {
             isGenerating = true
             streamingError = nil
@@ -549,35 +608,53 @@ final class ChatViewModel {
                 if Task.isCancelled && !messages[assistantIndex].content.isEmpty {
                     messages[assistantIndex].content += "\n\n(Stopped)"
                 }
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(messages[assistantIndex], conversationId: cid)
                     await refreshConversations()
                 }
             } catch is CancellationError {
                 if !messages[assistantIndex].content.isEmpty {
                     messages[assistantIndex].content += "\n\n(Stopped)"
                 }
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(messages[assistantIndex], conversationId: cid)
                     await refreshConversations()
                 }
             } catch {
-                // 6.4: Classify and keep partial response
                 let kind = classify(error)
                 streamingError = kind
                 self.error = kind.userMessage
-                if let cid = currentConversationId, let conversationDB {
-                    try? await conversationDB.insertMessage(messages[assistantIndex], conversationId: cid)
+                if let cid = currentConversationId {
+                    await persistMessage(messages[assistantIndex], conversationId: cid)
                     await refreshConversations()
                 }
             }
         }
-        await generationTask?.value
     }
 
     /// Cancels the current generation (streaming) task. Safe to call when not generating.
     func cancelGeneration() {
         generationTask?.cancel()
+    }
+
+    /// Persists a message to the conversation database with error logging.
+    private func persistMessage(_ message: Message, conversationId: String) async {
+        guard let conversationDB else { return }
+        do {
+            try await conversationDB.insertMessage(message, conversationId: conversationId)
+        } catch {
+            logger.error("Failed to persist message: \(error.localizedDescription)")
+        }
+    }
+
+    /// Updates conversation title with error logging.
+    private func persistConversationTitle(_ title: String, conversationId: String) async {
+        guard let conversationDB else { return }
+        do {
+            try await conversationDB.updateConversation(id: conversationId, title: title, updatedAt: Date())
+        } catch {
+            logger.error("Failed to update conversation title: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Streaming Error Classification

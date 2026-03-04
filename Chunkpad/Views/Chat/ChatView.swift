@@ -1,9 +1,13 @@
 import SwiftUI
+import Combine
 
 struct ChatView: View {
     @Environment(AppState.self) private var appState
     @Bindable var viewModel: ChatViewModel
     @State private var inputText = ""
+    @State private var isChunksBarCollapsed = false
+    /// Timer that fires during streaming to auto-scroll to the bottom.
+    private let streamingScrollTimer = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -160,6 +164,12 @@ struct ChatView: View {
                         }
                     }
                 }
+                .onReceive(streamingScrollTimer) { _ in
+                    guard viewModel.isGenerating else { return }
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
             }
         }
     }
@@ -171,12 +181,16 @@ struct ChatView: View {
             VStack(spacing: 0) {
                 // Retrieved chunks preview (collapsible)
                 if !viewModel.retrievedChunks.isEmpty {
-                    chunksBar
+                    if isChunksBarCollapsed {
+                        collapsedChunksSummary
+                    } else {
+                        chunksBar
 
-                    // Regenerate button — shown after a response so the user can
-                    // toggle chunks and re-run generation with the new selection.
-                    if viewModel.hasChunkSelectionChanged && !viewModel.isGenerating {
-                        regenerateBar
+                        // Regenerate button — shown after a response so the user can
+                        // toggle chunks and re-run generation with the new selection.
+                        if viewModel.hasChunkSelectionChanged && !viewModel.isGenerating {
+                            regenerateBar
+                        }
                     }
                 }
 
@@ -187,31 +201,78 @@ struct ChatView: View {
 
     // MARK: - Chunks Bar
 
-    private var chunksBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            GlassEffectContainer(spacing: GlassTokens.Spacing.containerDefault) {
-                HStack(spacing: GlassTokens.Spacing.containerDefault) {
-                    ForEach(viewModel.retrievedChunks) { scored in
-                        ChunkPreview(scoredChunk: scored) {
-                            viewModel.toggleChunk(id: scored.id)
-                        }
-                        .frame(width: 260)
-                    }
+    /// 7.3: Compact summary shown when chunks bar is collapsed.
+    private var collapsedChunksSummary: some View {
+        let includedCount = viewModel.retrievedChunks.filter(\.isIncluded).count
+        let totalCount = viewModel.retrievedChunks.count
+        let estimatedTokens = viewModel.retrievedChunks
+            .filter(\.isIncluded)
+            .reduce(0) { $0 + max(1, $1.chunk.content.count / 4) }
 
-                    // Pin documents button — opens sheet to manually include documents
-                    GlassIconButton(systemName: "plus.circle", size: 32) {
-                        Task {
-                            await viewModel.loadIndexedDocuments()
-                            viewModel.showPinDocumentsSheet = true
-                        }
-                    }
-                    .help("Pin documents to always include in context")
-                }
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isChunksBarCollapsed = false
             }
-            .padding(.horizontal)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.up")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("\(includedCount)/\(totalCount) chunks · ~\(estimatedTokens.formatted()) tokens")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
             .padding(.vertical, 8)
         }
-        .frame(maxHeight: 120)
+        .buttonStyle(.plain)
+    }
+
+    private var chunksBar: some View {
+        VStack(spacing: 0) {
+            // Collapse chevron
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isChunksBarCollapsed = true
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+            }
+            .buttonStyle(.plain)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                GlassEffectContainer(spacing: GlassTokens.Spacing.containerDefault) {
+                    HStack(spacing: GlassTokens.Spacing.containerDefault) {
+                        ForEach(viewModel.retrievedChunks) { scored in
+                            ChunkPreview(scoredChunk: scored) {
+                                viewModel.toggleChunk(id: scored.id)
+                            }
+                            .frame(width: 260)
+                        }
+
+                        // Pin documents button — opens sheet to manually include documents
+                        GlassIconButton(systemName: "plus.circle", size: 32) {
+                            Task {
+                                await viewModel.loadIndexedDocuments()
+                                viewModel.showPinDocumentsSheet = true
+                            }
+                        }
+                        .help("Pin documents to always include in context")
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+            .frame(maxHeight: 120)
+        }
     }
 
     // MARK: - Regenerate Bar
@@ -224,6 +285,13 @@ struct ChatView: View {
             Text("\(includedCount)/\(totalCount) chunks selected")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            // 9.1: Show how many chunks were trimmed to fit token budget
+            if viewModel.droppedChunkCount > 0 {
+                Text("· \(viewModel.droppedChunkCount) trimmed to fit budget")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
 
             Spacer()
 
@@ -244,6 +312,9 @@ struct ChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 12) {
+            // 7.4: Always-visible pin button for pre-query document pinning
+            pinButton
+
             TextField("Ask about your documents...", text: $inputText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
@@ -278,18 +349,64 @@ struct ChatView: View {
         .padding(.bottom, 12)
     }
 
+    // MARK: - Pin Button
+
+    /// 7.4: Always-visible pin button with badge showing pinned document count.
+    private var pinButton: some View {
+        let pinnedCount = viewModel.pinnedDocumentIDs.count
+
+        return Button {
+            Task {
+                await viewModel.loadIndexedDocuments()
+                viewModel.showPinDocumentsSheet = true
+            }
+        } label: {
+            Image(systemName: pinnedCount > 0 ? "pin.fill" : "pin")
+                .font(.body)
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 32, height: 32)
+                .overlay(alignment: .topTrailing) {
+                    if pinnedCount > 0 {
+                        Text("\(pinnedCount)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(.orange, in: .circle)
+                            .offset(x: 4, y: -4)
+                    }
+                }
+        }
+        .buttonStyle(.glass)
+        .help(pinnedCount > 0 ? "\(pinnedCount) pinned document\(pinnedCount == 1 ? "" : "s")" : "Pin documents to always include in context")
+    }
+
     // MARK: - Generation Mode Picker
 
     private var generationModePicker: some View {
         @Bindable var appState = appState
         return Picker("Generation", selection: $appState.generationMode) {
             ForEach(GenerationMode.allCases) { mode in
-                Label(mode.displayName, systemImage: mode.icon)
-                    .tag(mode)
+                HStack(spacing: 6) {
+                    // 7.5: Colored dot — green if configured, gray if not
+                    Circle()
+                        .fill(isProviderConfigured(mode) ? .green : .gray.opacity(0.4))
+                        .frame(width: 6, height: 6)
+                    Label(mode.displayName, systemImage: mode.icon)
+                }
+                .tag(mode)
             }
         }
         .pickerStyle(.menu)
-        .frame(maxWidth: 200)
+        .frame(maxWidth: 220)
+    }
+
+    /// 7.5: Check if a generation mode has a valid configuration.
+    private func isProviderConfigured(_ mode: GenerationMode) -> Bool {
+        switch mode {
+        case .anthropic: return !appState.anthropicAPIKey.isEmpty
+        case .openai: return !appState.openaiAPIKey.isEmpty
+        case .bundled: return appState.bundledLLMStatus.isReady
+        }
     }
 
     // MARK: - Actions
@@ -306,12 +423,12 @@ struct ChatView: View {
 
     /// 6.4: Retry the last message after a network error (uses stored provider + existing chunks).
     private func retryLastMessage() {
-        if let provider = viewModel.pendingRetryProvider {
+        if viewModel.pendingRetryProvider != nil {
             Task { await viewModel.retryLastMessage() }
             return
         }
         // Fallback: resolve provider fresh
-        if let provider = appState.resolvedProvider() {
+        if appState.resolvedProvider() != nil {
             Task { await viewModel.retryLastMessage() }
         } else if viewModel.isBundledLLMReady {
             Task { await viewModel.retryLastMessage() }

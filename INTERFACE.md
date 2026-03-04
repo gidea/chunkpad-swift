@@ -72,7 +72,7 @@ The primary interaction surface. A **NavigationSplitView** with a conversation s
 
 ### 1.1 Toolbar
 
-- **Generation Mode Picker** (`.principal` placement): A dropdown showing Claude, ChatGPT, and Ollama. Bound to `AppState.generationMode`. Changing the picker immediately changes which provider will be used for the next message.
+- **Generation Mode Picker** (`.principal` placement): A dropdown showing Claude, ChatGPT, and Llama (On-Device). Bound to `AppState.generationMode`. Changing the picker immediately changes which provider will be used for the next message.
 - **New Chat** button (`.primaryAction` placement): Creates a new conversation in the chat DB, selects it, and clears local messages/chunks/error. Always enabled. Also available as the top item in the conversation sidebar.
 
 ### 1.2 Error Banner
@@ -148,7 +148,7 @@ Appears only when there are retrieved chunks AND the last message is from the as
 ```
 User types question → presses Enter
     │
-    ├─ Cloud/Ollama provider configured? (AppState.resolvedProvider)
+    ├─ Cloud or bundled Llama provider configured? (AppState.resolvedProvider)
     │   └─ YES → sendMessage(text, provider)
     │
     ├─ Bundled Llama already downloaded? (isBundledLLMReady)
@@ -391,7 +391,7 @@ A `Form` with `.grouped` style, divided into sections.
 │  Generation Model                                │
 │    ○ Claude                                      │
 │    ○ ChatGPT                                     │
-│    ○ Ollama                                      │
+│    ○ Llama (On-Device)                            │
 ├──────────────────────────────────────────────────┤
 │  Claude (Anthropic)                              │
 │    API Key:            [••••••••••••]             │
@@ -401,9 +401,8 @@ A `Form` with `.grouped` style, divided into sections.
 │    API Key:            [••••••••••••]             │
 │    Model:              [GPT-5.2 ▾]               │
 ├──────────────────────────────────────────────────┤
-│  Ollama Configuration (only when Ollama selected)│
-│    Endpoint:           [http://localhost:11434]   │
-│    Model:              [llama3.3]                 │
+│  Llama Status (only when Llama selected)         │
+│    ● Ready / Not Downloaded                      │
 ├──────────────────────────────────────────────────┤
 │  🛡️ Privacy note (contextual)                   │
 ├──────────────────────────────────────────────────┤
@@ -419,13 +418,13 @@ A `Form` with `.grouped` style, divided into sections.
 - **Document Indexing section:** Chunk size (tokens) and overlap (tokens) are configurable via numeric text fields. Both are persisted in UserDefaults. An "Approx. characters per chunk" read-only field shows the derived value (tokens × 4). These values are used by `DocumentProcessor` during Step 1 (folder processing). Changing them and re-processing a folder regenerates chunk files with the new sizes.
 - **Generation Model radio group:** Selects the active LLM provider. All three options are always shown regardless of configuration state.
 - **Claude and ChatGPT sections:** Always visible so users can pre-configure both keys and switch freely. Each has a `SecureField` for the API key and a `Picker` for model selection.
-- **Ollama section:** Only shown when Ollama is selected as the generation mode.
-- **Privacy note:** Contextual — shows a cloud warning when a cloud provider is selected, or an "everything local" message for Ollama.
+- **Llama Status section:** Only shown when Llama (On-Device) is selected as the generation mode. Shows download status with colored indicator.
+- **Privacy note:** Contextual — shows a cloud warning when a cloud provider is selected, or an "everything local" message for Llama.
 
 ### 3.2 Persistence
 
 - **API keys** are stored in the macOS Keychain (service `"Chunkpad"`, accounts `anthropic_api_key` / `openai_api_key`) via `KeychainHelper`. They are loaded in `AppState.loadFromUserProfile()` at launch and saved in `saveToUserProfile()` when changed in Settings.
-- **Other settings** (generation mode, anthropic/openai model, ollama endpoint/model, context size, chunk size tokens, chunk overlap tokens) are stored in `UserDefaults` and loaded/saved the same way. Settings view uses `.onChange(of: ...)` on each bound value to call `saveToUserProfile()`, so changes are persisted as the user edits.
+- **Other settings** (generation mode, anthropic/openai model, context size, chunk size tokens, chunk overlap tokens) are stored in `UserDefaults` and loaded/saved the same way. Settings view uses `.onChange(of: ...)` on each bound value to call `saveToUserProfile()`, so changes are persisted as the user edits.
 
 ### 3.3 Observations and Concerns
 
@@ -433,9 +432,7 @@ A `Form` with `.grouped` style, divided into sections.
 
 2. **No visual connection between Settings and Chat.** After entering an API key in Settings, there is no confirmation or feedback that the key is active. The user must navigate to Chat and send a message to verify. A "Connected" badge or test-send button would help.
 
-3. **Ollama configuration doesn't verify the endpoint.** The user can enter any endpoint URL. There is no connectivity check to confirm Ollama is running or that the specified model is available.
-
-4. **The embedding model section is informational only.** Users cannot trigger a manual download, clear the cache, or change the embedding model. This is by design (the model downloads on first index) but may frustrate users who want to pre-download the model before indexing.
+3. **The embedding model section is informational only.** Users cannot trigger a manual download, clear the cache, or change the embedding model. This is by design (the model downloads on first index) but may frustrate users who want to pre-download the model before indexing.
 
 5. **Llama section has limited management.** The Llama section shows status and allows downloading or unloading from memory, but there is no way to delete the cached model files from disk to reclaim ~1.7 GB. Users must manually delete the cache folder.
 
@@ -552,7 +549,7 @@ A `Form` with `.grouped` style, divided into sections.
 |---|---|---|---|
 | API keys | Yes (Keychain) | Persistent | Via `KeychainHelper`; load/save in AppState |
 | Generation mode | Yes (UserDefaults) | Persistent | Load at launch, save on change in Settings |
-| Model selections | Yes (UserDefaults) | Persistent | Anthropic/OpenAI model, Ollama endpoint/model, context size |
+| Model selections | Yes (UserDefaults) | Persistent | Anthropic/OpenAI model, context size |
 | Chunk size/overlap | Yes (UserDefaults) | Persistent | `chunkSizeTokens`, `chunkOverlapTokens` in AppState |
 | Indexed folder | Yes (UserDefaults) | Persistent | `rootURL` + `chunksRootURL` pair; only most recent folder |
 | Embedded chunk IDs | Yes (UserDefaults) | Persistent | Set of `"{filePath}::chunk_{index}"` strings |
@@ -596,7 +593,7 @@ Implemented:
 
 - **Display errors in chat UI** — Error banner above the bottom bar when `ChatViewModel.error` is set; warning icon, message text, Dismiss button. Cleared on new send/regenerate or when user dismisses.
 - **Display errors in documents UI** — Error banner shown in both empty state and document list views, with Dismiss button. Previously, errors during processing were silently swallowed when no documents were loaded yet.
-- **Persist settings** — API keys in Keychain (`KeychainHelper`); generation mode, model selections, Ollama config, context size, chunk size/overlap in UserDefaults. Load in `AppState.loadFromUserProfile()` at launch; save in `saveToUserProfile()` triggered by `.onChange` in Settings.
+- **Persist settings** — API keys in Keychain (`KeychainHelper`); generation mode, model selections, context size, chunk size/overlap in UserDefaults. Load in `AppState.loadFromUserProfile()` at launch; save in `saveToUserProfile()` triggered by `.onChange` in Settings.
 - **Persist conversation** — Separate SQLite DB `chunkpad_chat.db` (ConversationDatabaseService). Conversations and messages stored; no conversation loaded at launch. Chat tab has NavigationSplitView with conversation list sidebar (New Chat + list); selecting a conversation loads its messages; New Chat creates and selects a new conversation.
 - **Two-step indexing pipeline** — Process documents into chunk markdown files (Step 1), then review and embed (Step 2). Chunk tree sidebar with include/exclude toggles, "Embed Selected" button, and modified file detection. See Section 2 for full details.
 - **Populate the document list** — `DocumentsView` loads indexed documents from the database via `.task` on appear, refreshed when indexing completes.

@@ -8,6 +8,20 @@ struct DocumentsView: View {
     @State private var selectedNodeID: String?
     @State private var showRemoveFolderConfirmation = false
     @State private var showClearAllConfirmation = false
+    @State private var documentToDelete: IndexedDocument?
+    @State private var chunkToDelete: ReviewableChunk?
+    @State private var chunkViewMode: ChunkViewMode = {
+        if let raw = UserDefaults.standard.string(forKey: "documents_chunk_view_mode"),
+           let mode = ChunkViewMode(rawValue: raw) {
+            return mode
+        }
+        return .list
+    }()
+    @State private var chunkFilter = ""
+
+    enum ChunkViewMode: String {
+        case list, grid
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +45,21 @@ struct DocumentsView: View {
                     Label("Add Folder", systemImage: "folder.badge.plus")
                 }
                 .disabled(viewModel.isIndexing)
+            }
+            if viewModel.chunkFileTree != nil {
+                ToolbarItem {
+                    Picker("View", selection: $chunkViewMode) {
+                        Image(systemName: "list.bullet")
+                            .tag(ChunkViewMode.list)
+                        Image(systemName: "square.grid.2x2")
+                            .tag(ChunkViewMode.grid)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 80)
+                    .onChange(of: chunkViewMode) { _, newMode in
+                        UserDefaults.standard.set(newMode.rawValue, forKey: "documents_chunk_view_mode")
+                    }
+                }
             }
             if viewModel.indexedFolder != nil {
                 ToolbarItem {
@@ -93,6 +122,38 @@ struct DocumentsView: View {
         } message: {
             Text("Delete all indexed data? \"Clear Everything\" also removes chunk files from disk.")
         }
+        .alert("Delete Document?", isPresented: .init(
+            get: { documentToDelete != nil },
+            set: { if !$0 { documentToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let doc = documentToDelete {
+                    Task {
+                        await viewModel.deleteDocument(id: doc.id)
+                        indexedDocuments = await viewModel.loadIndexedDocumentsFromDatabase()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { documentToDelete = nil }
+        } message: {
+            Text("This will permanently delete \"\(documentToDelete?.fileName ?? "")\" and all its chunks.")
+        }
+        .alert("Delete Chunk?", isPresented: .init(
+            get: { chunkToDelete != nil },
+            set: { if !$0 { chunkToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let chunk = chunkToDelete {
+                    Task {
+                        await viewModel.deleteChunk(id: chunk.id)
+                        await viewModel.refreshChunkTree()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { chunkToDelete = nil }
+        } message: {
+            Text("This will permanently delete this chunk from the database.")
+        }
         .onAppear {
             viewModel.appState = appState
         }
@@ -108,6 +169,7 @@ struct DocumentsView: View {
                 Task { indexedDocuments = await viewModel.loadIndexedDocumentsFromDatabase() }
             }
         }
+        .onChange(of: selectedNodeID) { _, _ in chunkFilter = "" }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if viewModel.indexedFolder != nil {
                 Task { await viewModel.checkForModifiedChunkFiles() }
@@ -222,6 +284,14 @@ struct DocumentsView: View {
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 4)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            documentToDelete = doc
+                        } label: {
+                            Label("Delete Document", systemImage: "trash")
+                        }
+                        .disabled(viewModel.isIndexing)
+                    }
                 }
             }
         }
@@ -234,7 +304,17 @@ struct DocumentsView: View {
             OutlineGroup(tree.rootFolder.children, children: \.children) { node in
                 switch node {
                 case .folder(let n):
-                    Label(n.name, systemImage: "folder")
+                    // 2.4.3: Per-folder aggregate status badge
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .foregroundStyle(.secondary)
+                        Text(n.name)
+                        Spacer()
+                        let status = viewModel.folderAggregateStatus(for: n)
+                        Image(systemName: status.systemImage)
+                            .font(.caption2)
+                            .foregroundStyle(status.dotColor)
+                    }
                 case .file(let n):
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text")
@@ -294,19 +374,61 @@ struct DocumentsView: View {
     @ViewBuilder
     private func chunkListView(for fileInfo: ChunkFileInfo) -> some View {
         let reviewable = viewModel.reviewableChunks(for: fileInfo)
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                Text(fileInfo.fileName)
-                    .font(.title3.weight(.semibold))
-                    .padding(.bottom, 4)
-
-                ForEach(reviewable) { rc in
-                    chunkRow(reviewable: rc)
+        let filtered = filteredChunks(reviewable)
+        VStack(spacing: 0) {
+            // Filter bar
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.secondary)
+                TextField("Filter chunks...", text: $chunkFilter)
+                    .textFieldStyle(.plain)
+                if !chunkFilter.isEmpty {
+                    Button {
+                        chunkFilter = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding()
+            .padding(8)
+            .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            if filtered.isEmpty && !chunkFilter.isEmpty {
+                ContentUnavailableView.search(text: chunkFilter)
+            } else {
+                ScrollView {
+                    if chunkViewMode == .grid {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 400), spacing: 12)], spacing: 12) {
+                            ForEach(filtered) { rc in
+                                chunkGridCard(reviewable: rc)
+                            }
+                        }
+                        .padding()
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(filtered) { rc in
+                                chunkRow(reviewable: rc)
+                            }
+                        }
+                        .padding()
+                    }
+                }
+            }
         }
         .navigationTitle(fileInfo.fileName)
+    }
+
+    private func filteredChunks(_ chunks: [ReviewableChunk]) -> [ReviewableChunk] {
+        guard !chunkFilter.isEmpty else { return chunks }
+        let query = chunkFilter.lowercased()
+        return chunks.filter {
+            $0.processedChunk.title.lowercased().contains(query) ||
+            $0.processedChunk.content.lowercased().contains(query)
+        }
     }
 
     private func chunkRow(reviewable: ReviewableChunk) -> some View {
@@ -343,6 +465,60 @@ struct DocumentsView: View {
         .padding(GlassTokens.Padding.element)
         .opacity(reviewable.isIncluded ? 1 : 0.5)
         .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+        .contextMenu {
+            Button(role: .destructive) {
+                chunkToDelete = reviewable
+            } label: {
+                Label("Delete Chunk", systemImage: "trash")
+            }
+            .disabled(viewModel.isIndexing)
+        }
+    }
+
+    private func chunkGridCard(reviewable: ReviewableChunk) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button {
+                    viewModel.toggleChunkInclusion(id: reviewable.id)
+                } label: {
+                    Image(systemName: reviewable.embeddingStatus.systemImage)
+                        .foregroundStyle(reviewable.embeddingStatus.color)
+                }
+                .buttonStyle(.plain)
+
+                Text(reviewable.processedChunk.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .lineLimit(1)
+                Spacer()
+            }
+
+            Text(reviewable.processedChunk.content)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(8)
+
+            HStack {
+                if reviewable.isIncluded {
+                    ChunkStatusBadge(status: reviewable.embeddingStatus, showLabel: false)
+                }
+                Spacer()
+                Text("\(reviewable.processedChunk.content.count) chars")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(GlassTokens.Padding.element)
+        .opacity(reviewable.isIncluded ? 1 : 0.5)
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassTokens.Radius.element))
+        .contextMenu {
+            Button(role: .destructive) {
+                chunkToDelete = reviewable
+            } label: {
+                Label("Delete Chunk", systemImage: "trash")
+            }
+            .disabled(viewModel.isIndexing)
+        }
     }
 
     // MARK: - Skipped Files Banner (6.3.4)

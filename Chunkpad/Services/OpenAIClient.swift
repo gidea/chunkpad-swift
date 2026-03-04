@@ -4,6 +4,8 @@ import Foundation
 struct OpenAIClient: LLMClient, Sendable {
     let apiKey: String
     let model: String
+    let temperature: Double
+    let maxTokens: Int
 
     private let baseURL = URL(string: "https://api.openai.com/v1/chat/completions")!
 
@@ -13,7 +15,9 @@ struct OpenAIClient: LLMClient, Sendable {
         let body = OpenAIRequest(
             model: model,
             messages: messages.map { .init(role: $0.role, content: $0.content) },
-            stream: false
+            stream: false,
+            temperature: temperature,
+            max_tokens: maxTokens
         )
 
         var request = URLRequest(url: baseURL)
@@ -41,7 +45,9 @@ struct OpenAIClient: LLMClient, Sendable {
                     let body = OpenAIRequest(
                         model: model,
                         messages: messages.map { .init(role: $0.role, content: $0.content) },
-                        stream: true
+                        stream: true,
+                        temperature: temperature,
+                        max_tokens: maxTokens
                     )
 
                     var request = URLRequest(url: baseURL)
@@ -81,6 +87,8 @@ private struct OpenAIRequest: Encodable {
     let model: String
     let messages: [OpenAIMessage]
     let stream: Bool
+    let temperature: Double
+    let max_tokens: Int
 }
 
 private struct OpenAIMessage: Codable {

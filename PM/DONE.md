@@ -6,6 +6,307 @@
 
 ---
 
+## Sprint 13: Table Parsing + Section-Aware Chunking ✅ Complete
+
+**Goal:** Improve document parsing with proper table handling and section-aware chunking for better knowledge extraction.
+**Status:** Complete
+
+### Tasks
+
+#### 12.1 DOCX table extraction via HTML [P1] ✅
+
+- [x] Changed `textutil -convert txt` to `textutil -convert html` via new `runTextutilHTML(at:)` method
+- [x] Added `htmlToMarkdown(_ html:)` — finds `<table>...</table>` blocks, converts to markdown tables
+- [x] Added `parseHTMLTable(_ tableHTML:)` — extracts `<tr>` rows, `<td>`/`<th>` cells, builds pipe-separated markdown
+- [x] Non-table HTML content stripped of tags with `stripHTMLTags(_ html:)`, common entities decoded
+- [x] Column count normalized across rows; pipes in cell content escaped with `\|`
+- [x] v1 scope: skips nested tables and colspan/rowspan (treated as flat text)
+
+#### 12.2 PDF heuristic table detection [P2] ✅
+
+- [x] Added `detectAndConvertTables(in text:)` — scans plain text for tabular patterns
+- [x] Tab-separated detection: lines with 1+ tab character grouped into table blocks (min 2 rows)
+- [x] Multi-space aligned columns: `detectAlignedColumns(lines:)` finds consistent 3+ space gaps across 60%+ of lines
+- [x] `splitByColumnPositions(_:positions:)` splits lines by detected column boundaries
+- [x] Integrated into `processPDF` after `page.string` extraction
+
+#### 12.3 Plain text table detection [P3] ✅
+
+- [x] Reuses `detectAndConvertTables(in:)` from 12.2 in `processPlainText`
+- [x] Applied before markdown wrapping so tables in .txt files are converted
+
+#### 12.4 Section-aware chunking [P1] ✅
+
+- [x] Added `splitIntoSectionChunks(…)` — splits at markdown heading boundaries (`# / ## / ###`)
+- [x] `parseMarkdownSections(_ text:)` — parses headings with level tracking and heading stack
+- [x] `containsMarkdownHeadings(_ text:)` — detects headings outside fenced code blocks
+- [x] `removeFencedCodeBlocks(_ text:)` — prevents false heading matches inside ``` blocks
+- [x] Oversized sections fall back to paragraph splitting via `splitIntoParagraphChunks`
+- [x] `splitIntoChunks` now auto-delegates to section-aware path when headings detected
+- [x] Original paragraph-splitting logic preserved as `splitIntoParagraphChunks` (unchanged behavior)
+
+#### 12.5 Hierarchical chunk titles [P2] ✅
+
+- [x] `MarkdownSection` struct tracks `headingPath: [String]` — hierarchical heading ancestry
+- [x] Heading stack maintained during parsing: pops headings at same or deeper level
+- [x] `buildHierarchicalTitle(from:)` joins path as `"Document > Section > Subsection"`
+- [x] Oversized sections that fall back to paragraph splitting append `[N]` suffix
+
+---
+
+## Sprint 12: Model Upgrade + File Naming Fix ✅ Complete
+
+**Goal:** Upgrade embedding model to bge-large-en-v1.5 (1024 dims), tie chunk size defaults to model token window, and fix chunk file naming bug.
+**Status:** Complete
+
+### Tasks
+
+#### 10.1 Upgrade EmbeddingService to bge-large [P0] ✅
+- [x] Changed `modelConfiguration` from `.bge_base` to `.bge_large`
+- [x] Changed `embeddingDimension` from 768 to 1024
+- [x] Updated `modelDisplayName`, `modelID`, `modelSize` (~1.3 GB)
+- [x] Updated doc comment block for 1024 dims / 1.3 GB
+
+#### 10.2 Update DatabaseService schema (768→1024) [P0] ✅
+- [x] Bumped `currentSchemaVersion` from 9 to 10
+- [x] Changed CREATE TABLE `float[768]` to `float[1024]`
+- [x] Migration case 10: DROP + recreate vec_chunks with 1024 dims
+- [x] Clear `embedded_chunk_refs` in migration (all embeddings invalidated)
+
+#### 10.3 Add maxTokenWindow to EmbeddingService [P1] ✅
+- [x] `static let maxTokenWindow: Int = 512` (BERT max_position_embeddings)
+
+#### 10.4 Update AppState chunk size defaults [P1] ✅
+- [x] Default `chunkSizeTokens` from 1000 to 512
+- [x] `loadFromUserProfile()` fallback uses `EmbeddingService.maxTokenWindow`
+- [x] `DocumentProcessor.defaultChunkSizeChars` derived from `EmbeddingService.maxTokenWindow * 4`
+
+#### 10.5 Model-aware chunk size in SettingsView [P2] ✅
+- [x] "Embedding model" and "Model token limit" labels
+- [x] Orange warning when `chunkSizeTokens > maxTokenWindow`
+
+#### 11.1 Fix chunkFileURL extension stripping [P0] ✅
+- [x] `deletingPathExtension` before `appendingPathExtension("md")` in both code paths
+- [x] Example: `report.pdf` → `report.md` (was `report.pdf.md`)
+
+#### 11.2 Update inferSourcePath for new naming [P1] ✅
+- [x] Updated doc comments to reflect extensionless inferred paths
+
+#### Stale reference cleanup ✅
+- [x] Updated doc comments in BundledLLMService, ChatViewModel, IndexingViewModel from bge-base to bge-large
+
+---
+
+## Sprint 11: Final Backlog + Release Prep ✅ Complete
+
+**Goal:** Implement the last remaining backlog item and harden the codebase for first stable release.
+**Status:** Complete
+
+### Tasks
+
+#### 2.4.3 Per-folder aggregate status badge [P3] ✅
+
+- [x] **2.4.3.1** Add `folderAggregateStatus(for:)` to IndexingViewModel — recursively collects file statuses
+- [x] **2.4.3.2** Logic: all files `.allEmbedded` → green; any embedded → orange; none → gray
+- [x] **2.4.3.3** Display colored dot on folder rows in the sidebar (same style as file rows)
+
+#### Release hardening ✅
+
+Full codebase audit and fixes for v1.0 stability.
+
+- [x] Fix 2 compiler warnings: unused `withUnsafeBufferPointer` / `withUnsafeBytes` results in DatabaseService
+- [x] Fix force unwrap on `FileManager.urls().first!` in DatabaseService and ConversationDatabaseService — replaced with `guard let` + `fatalError`
+- [x] Fix force unwrap on `buffer.baseAddress!` in `embeddingToBlob` — replaced with `guard let`
+- [x] Replace 8 silent `try?` conversation DB writes with logged `persistMessage`/`persistConversationTitle` helpers using `os.log`
+- [x] Build: zero errors, zero warnings
+
+---
+
+## Sprint 10: Final Polish ✅ Complete
+
+**Goal:** Surface hidden state, fix UX edge cases, add database management, and close out remaining polish tasks.
+**Status:** Complete
+
+### Tasks
+
+#### 9.3 Auto-clear chunk filter on file switch [P3] ✅
+- [x] `.onChange(of: selectedNodeID) { _, _ in chunkFilter = "" }`
+
+#### 9.1 Surface droppedChunkCount in regenerate bar [P2] ✅
+- [x] Orange "N trimmed to fit budget" text in regenerate bar when `droppedChunkCount > 0`
+
+#### 9.2 Validate pinned docs after delete [P2] ✅
+- [x] `documentDeletedNotification` static property on IndexingViewModel
+- [x] MainView `.onReceive` listener calls `chatViewModel.validatePinnedDocuments()`
+
+#### 7.3 Collapsible chunks bar [P3] ✅
+- [x] `isChunksBarCollapsed` state with chevron toggle
+- [x] Compact summary: "N/M chunks · ~X tokens"
+
+#### 5.4 Database management in Settings [P3] ✅
+- [x] Stats display: document count, chunk count, formatted file size
+- [x] "Clear All Data…" destructive button with confirmation dialog
+- [x] `totalChunkCount()` and `databaseFileSize()` methods on DatabaseService
+
+#### 7.5 Generation mode indicator [P3] ✅
+- [x] Green/gray dot per provider in toolbar picker
+- [x] `isProviderConfigured(_:)` checks API key / endpoint presence
+
+---
+
+## Sprint 9: Chat UX + Cleanup ✅ Complete
+
+**Goal:** Fix streaming scroll, add context budget enforcement, always-visible pinning, and clean up tech debt.
+**Status:** Complete
+
+### Tasks
+
+#### 4.2.3 Throttled streaming scroll [P1] ✅
+
+- [x] Timer.publish(every: 0.3) + onReceive scrolls to "bottom" anchor
+- [x] Guard on `isGenerating` — timer fires continuously but only scrolls when generating
+- [x] Stop the timer when `isGenerating` flips to false — guard statement in onReceive
+
+#### 4.4.4 Auto-truncate context to budget [P2] ✅
+
+- [x] `estimateTokens(_:)` helper (chars / 4 approximation)
+- [x] In `buildContext`, drop lowest-relevance non-pinned chunks until under `contextSize × 0.8`
+- [x] Track dropped chunk count via `droppedChunkCount` property
+- [x] Always keep at least 1 chunk; never drop pinned chunks
+
+#### 7.4 Pre-query document pinning [P2] ✅
+
+- [x] Persistent pin button in `inputBar` — always visible, `pin`/`pin.fill` icon
+- [x] Opens PinDocumentsSheet same as current flow
+- [x] Orange count badge when pins are active
+
+#### 8.1 Extract shared generation task code [P1] ✅
+
+- [x] `runGeneration(client:contextMessages:assistantIndex:)` private method
+- [x] Both `sendMessage` and `regenerate` call the shared method
+- [x] Error handling, cancellation, and DB persistence remain identical
+
+#### 8.2 Fix compiler warnings in ChatView [P1] ✅
+
+- [x] Replaced unused `if let provider =` with `!= nil` checks
+
+#### 8.3 Remove dead indexFolder code path [P2] ✅
+
+- [x] Removed `selectAndIndexFolder()` and `indexFolder()` (~100 lines)
+
+#### 7.6 Update README.md project structure [P2] ✅
+
+- [x] Added 7 missing files; alphabetized entries within each section
+
+---
+
+## Sprint 8: Documents Polish ✅ Complete
+
+**Goal:** Robust document lifecycle — delete documents/chunks, persist pinned docs and modification dates, conversation management UX, and chunk view overhaul.
+**Status:** ✅ Complete
+
+### Tasks
+
+#### 4.6 Persist pinned document IDs [P2] ✅
+
+Pinned document IDs are in-memory only (`ChatViewModel.pinnedDocumentIDs`). After app restart, all pins are lost.
+
+- [x] **4.6.1** Add `pinnedDocumentIDs` ProfileKey in `AppState` and `Set<String>` property with load/save via UserDefaults
+- [x] **4.6.2** In `ChatViewModel`, computed property backed by `appState.pinnedDocumentIDs`; saves on toggle
+- [x] **4.6.3** Validate pinned IDs on load — `validatePinnedDocuments()` removes IDs for deleted documents
+
+**Edge cases:**
+- Pinned doc deleted between sessions → silently removed from set on validation
+- Empty set → UserDefaults key removed
+
+#### 2.5.1 Persist lastKnownModificationDates to DB [P2] ✅
+
+`IndexingViewModel.lastKnownModificationDates` is in-memory only. After restart, modification detection always reports no changes.
+
+- [x] **2.5.1.1** Persist as `[String: TimeInterval]` in UserDefaults (key: `indexing_last_known_modification_dates`)
+- [x] **2.5.1.2** Load in `IndexingViewModel.init()`; auto-save via `didSet` on property
+- [x] **2.5.1.3** Clear persisted data on removeFolder() and clearAllData() (via property reset triggering didSet)
+
+**Edge cases:**
+- Loading bypass: `isLoadingPersistedDates` flag prevents re-persisting during load
+
+#### 2.6 Delete individual documents/chunks [P2] ✅
+
+No UI to delete individual documents or chunks. Users can only "Clear All Data".
+
+- [x] **2.6.1** Add `deleteChunk(id:)` to `DatabaseService` — cascades vec_chunks → embedded_chunk_refs → chunks
+- [x] **2.6.2** Add `deleteDocument(id:)` and `deleteChunk(id:)` methods to `IndexingViewModel`
+- [x] **2.6.3** Context menu "Delete Document" on document rows in DocumentsView flat list
+- [x] **2.6.4** Context menu "Delete Chunk" on chunk rows in DocumentsView detail
+- [x] **2.6.5** Confirmation alerts before deletion
+- [x] **2.6.6** Refresh document list / chunk tree after deletion; update AppState.indexedDocumentCount
+
+**Edge cases:**
+- Delete while indexing → disabled via `viewModel.isIndexing` guard
+
+#### 4.7 Conversation management UX [P2] ✅
+
+No way to rename, delete, or manage conversations from the sidebar.
+
+- [x] **4.7.1** Added `messageCount(conversationId:)` to `ConversationDatabaseService`
+- [x] **4.7.2** Added `messageCount` field to `Conversation` struct; populated in `refreshConversations()`
+- [x] **4.7.3** Message count displayed in sidebar row (e.g. "· 5 msgs")
+- [x] **4.7.4** Context menu on conversation rows: "Rename" and "Delete"
+- [x] **4.7.5** Swipe-to-delete on conversation rows
+- [x] **4.7.6** Delete confirmation alert; switches to "New Chat" if deleting active conversation
+- [x] **4.7.7** Rename alert with TextField; calls `updateConversation(id:title:updatedAt:)`
+
+**Edge cases:**
+- Rename to empty string → no-op (trimmed, guard !isEmpty)
+- Delete active conversation → clears messages and currentConversationId
+
+#### 2.3 Chunk grid/list view overhaul [P1] ✅
+
+Chunk display is a plain list only. No view mode toggle, no grid cards, no filter bar.
+
+- [x] **2.3.1** Added `ChunkViewMode` enum (`.list`, `.grid`) with segmented picker in toolbar
+- [x] **2.3.2** Grid view: `LazyVGrid` with adaptive columns (min 260), cards showing status, title, content preview, char count
+- [x] **2.3.3** Filter bar: TextField for searching chunks by title/content with clear button
+- [x] **2.3.4** Persisted view mode in UserDefaults (`documents_chunk_view_mode`)
+- [x] **2.3.5** Grid cards use Liquid Glass design (glassEffect, GlassTokens, ChunkStatusBadge)
+- [x] **2.3.6** Empty filter state shows `ContentUnavailableView.search`
+
+---
+
+## Sprint 7: Settings + Polish ✅ Complete
+
+**Goal:** Expose configurable search and generation parameters; add markdown rendering and pinned-chunk polish.
+
+### 5.1 Configurable search parameters [P1] ✅
+- [x] `searchResultCount: Int` (default 10) and `searchMinScore: Double` (default 0.1) in AppState
+- [x] Persisted to UserDefaults via `saveToUserProfile` / `loadFromUserProfile`
+- [x] Passed through `ChatViewModel.sendMessage` → `database.hybridSearch` with clamping (k ∈ [1,20], minScore ∈ [0,1])
+- [x] Search section in SettingsView: TextField for max results, Slider for min relevance score
+
+### 5.2 API key validation ("Test" button) [P2] ✅
+- [x] "Test API Key" button for Anthropic (POST `/v1/messages` with `max_tokens: 1`)
+- [x] "Test API Key" button for OpenAI (GET `/v1/models`)
+- [x] Inline spinner/checkmark/error indicators; validation resets on key change
+
+### 5.3 Configurable LLM parameters [P2] ✅
+- [x] `llmTemperature: Double` (default 0.7) and `llmMaxTokens: Int` (default 4096) in AppState
+- [x] `temperature` and `maxTokens` added to `CloudConfig` and `LocalConfig`
+- [x] Threaded through `LLMServiceFactory` to all 3 clients (Anthropic, OpenAI, BundledLLM)
+- [x] "LLM Parameters" section in SettingsView: Slider for temperature, TextField for max tokens
+
+### 7.1 Markdown rendering for assistant responses [P2] ✅
+- [x] `MarkdownContentView` replaces plain `Text` for assistant messages
+- [x] Fenced code blocks render in monospace with `.quaternary.opacity(0.3)` background
+- [x] Inline markdown via `AttributedString(markdown:, options: .inlineOnlyPreservingWhitespace)`
+- [x] Graceful fallback to plain text for malformed markdown
+
+### 7.2 Distinguish pinned chunks visually [P2] ✅
+- [x] `isPinned: Bool = false` on `ScoredChunk`; set `true` in `addPinnedChunks`
+- [x] Pin icon badge + "Pinned" orange pill in `ChunkPreview` header
+- [x] Orange-tinted glass effect background for pinned cards
+
+---
+
 ## Sprint 6: Error Handling ✅ Complete
 
 **Goal:** Every error the app can encounter is visible to the user with a clear recovery path. No silent failures.

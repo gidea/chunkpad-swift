@@ -4,6 +4,8 @@ import Foundation
 struct AnthropicClient: LLMClient, Sendable {
     let apiKey: String
     let model: String
+    let temperature: Double
+    let maxTokens: Int
 
     private let baseURL = URL(string: "https://api.anthropic.com/v1/messages")!
 
@@ -13,7 +15,8 @@ struct AnthropicClient: LLMClient, Sendable {
         let (systemPrompt, userMessages) = splitSystem(messages)
         let body = AnthropicRequest(
             model: model,
-            max_tokens: 4096,
+            max_tokens: maxTokens,
+            temperature: temperature,
             system: systemPrompt,
             messages: userMessages.map { .init(role: $0.role, content: $0.content) },
             stream: false
@@ -45,7 +48,8 @@ struct AnthropicClient: LLMClient, Sendable {
                     let (systemPrompt, userMessages) = splitSystem(messages)
                     let body = AnthropicRequest(
                         model: model,
-                        max_tokens: 4096,
+                        max_tokens: maxTokens,
+                        temperature: temperature,
                         system: systemPrompt,
                         messages: userMessages.map { .init(role: $0.role, content: $0.content) },
                         stream: true
@@ -97,6 +101,7 @@ struct AnthropicClient: LLMClient, Sendable {
 private struct AnthropicRequest: Encodable {
     let model: String
     let max_tokens: Int
+    let temperature: Double
     let system: String?
     let messages: [AnthropicMessage]
     let stream: Bool

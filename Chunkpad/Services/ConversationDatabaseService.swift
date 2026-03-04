@@ -54,10 +54,13 @@ actor ConversationDatabaseService {
     }
 
     init() {
-        let appSupport = FileManager.default.urls(
+        guard let baseURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        ).first!.appendingPathComponent("Chunkpad", isDirectory: true)
+        ).first else {
+            fatalError("Cannot resolve Application Support directory")
+        }
+        let appSupport = baseURL.appendingPathComponent("Chunkpad", isDirectory: true)
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
         self.databasePath = appSupport.appendingPathComponent("chunkpad_chat.db").path
     }
@@ -283,6 +286,19 @@ actor ConversationDatabaseService {
             result.append(Message(id: id, role: role, content: content, timestamp: timestamp, referencedChunkIDs: refIds))
         }
         return result
+    }
+
+    func messageCount(conversationId: String) throws -> Int {
+        guard let db else { throw ConversationDatabaseError.connectionFailed("No connection") }
+        let sql = "SELECT COUNT(*) FROM messages WHERE conversation_id = ?"
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw ConversationDatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        }
+        sqlite3_bind_text(statement, 1, conversationId, -1, Self.sqliteTransient)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+        return Int(sqlite3_column_int64(statement, 0))
     }
 
     func deleteConversation(id: String) throws {

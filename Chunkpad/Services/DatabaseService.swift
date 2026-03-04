@@ -27,7 +27,7 @@ enum DatabaseError: LocalizedError, Sendable {
 actor DatabaseService {
 
     /// Current schema version. Bump when adding migrations.
-    static let currentSchemaVersion = 9
+    static let currentSchemaVersion = 10
 
     // nonisolated(unsafe) because deinit needs access and OpaquePointer is not Sendable.
     // Thread safety is guaranteed by the actor isolation — deinit only runs after
@@ -43,10 +43,13 @@ actor DatabaseService {
     // MARK: - Initialization
 
     init() {
-        let appSupport = FileManager.default.urls(
+        guard let baseURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        ).first!.appendingPathComponent("Chunkpad", isDirectory: true)
+        ).first else {
+            fatalError("Cannot resolve Application Support directory")
+        }
+        let appSupport = baseURL.appendingPathComponent("Chunkpad", isDirectory: true)
 
         // Ensure directory exists
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
@@ -157,7 +160,7 @@ actor DatabaseService {
         try execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
                 chunk_id TEXT PRIMARY KEY,
-                embedding float[768] distance_metric=cosine,
+                embedding float[1024] distance_metric=cosine,
                 document_type TEXT,
                 +title TEXT,
                 +source_path TEXT
@@ -264,6 +267,22 @@ actor DatabaseService {
                 try execute("CREATE INDEX IF NOT EXISTS idx_chunks_source_path ON chunks(source_path)")
                 try execute("CREATE INDEX IF NOT EXISTS idx_embedded_chunk_refs_chunk_ref_id ON embedded_chunk_refs(chunk_ref_id)")
                 try execute("CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)")
+            case 10:
+                // Upgrade embedding dimension from 768 (bge-base) to 1024 (bge-large).
+                // vec0 tables cannot ALTER columns, so drop and recreate.
+                // All existing embeddings are invalidated; chunk text on disk is preserved.
+                try execute("DROP TABLE IF EXISTS vec_chunks")
+                try execute("""
+                    CREATE VIRTUAL TABLE vec_chunks USING vec0(
+                        chunk_id TEXT PRIMARY KEY,
+                        embedding float[1024] distance_metric=cosine,
+                        document_type TEXT,
+                        +title TEXT,
+                        +source_path TEXT
+                    )
+                """)
+                // Clear embedded_chunk_refs since all embeddings are now invalid
+                try execute("DELETE FROM embedded_chunk_refs")
             default:
                 break
             }
@@ -357,6 +376,14 @@ actor DatabaseService {
                          bindings: [.text(id)])
             try execute("DELETE FROM chunks WHERE document_id = ?", bindings: [.text(id)])
             try execute("DELETE FROM documents WHERE id = ?", bindings: [.text(id)])
+        }
+    }
+
+    func deleteChunk(id: String) throws {
+        try performTransaction {
+            try execute("DELETE FROM vec_chunks WHERE chunk_id = ?", bindings: [.text(id)])
+            try execute("DELETE FROM embedded_chunk_refs WHERE chunk_ref_id = ?", bindings: [.text(id)])
+            try execute("DELETE FROM chunks WHERE id = ?", bindings: [.text(id)])
         }
     }
 
@@ -508,6 +535,20 @@ actor DatabaseService {
         return rows.first ?? 0
     }
 
+    func totalChunkCount() throws -> Int {
+        let rows: [Int] = try query("SELECT COUNT(*) FROM chunks") { stmt in
+            Int(sqlite3_column_int64(stmt, 0))
+        }
+        return rows.first ?? 0
+    }
+
+    /// Returns the database file size in bytes, or nil if not available.
+    func databaseFileSize() -> Int64? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: databasePath),
+              let size = attrs[.size] as? Int64 else { return nil }
+        return size
+    }
+
     // MARK: - Chunk CRUD
 
     func insertChunk(_ chunk: Chunk, documentID: String, embedding: [Float]) throws {
@@ -539,7 +580,7 @@ actor DatabaseService {
 
         // Bind embedding as float32 blob
         let blobSize = embedding.count * MemoryLayout<Float>.size
-        embedding.withUnsafeBufferPointer { buffer in
+        _ = embedding.withUnsafeBufferPointer { buffer in
             sqlite3_bind_blob(stmt, 2, buffer.baseAddress, Int32(blobSize),
                              unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         }
@@ -633,7 +674,7 @@ actor DatabaseService {
     /// users toggle individual chunks on/off before sending context to the LLM.
     ///
     /// - Parameters:
-    ///   - queryEmbedding: The 768-dim BGE query embedding.
+    ///   - queryEmbedding: The 1024-dim BGE query embedding.
     ///   - queryText: The raw user query for FTS5.
     ///   - k: Maximum number of results to return.
     ///   - minScore: Minimum combined score (0–1). Chunks below this are discarded
@@ -790,7 +831,8 @@ actor DatabaseService {
 
     private func embeddingToBlob(_ embedding: [Float]) -> Data {
         embedding.withUnsafeBufferPointer { buffer in
-            Data(bytes: buffer.baseAddress!, count: buffer.count * MemoryLayout<Float>.size)
+            guard let addr = buffer.baseAddress else { return Data() }
+            return Data(bytes: addr, count: buffer.count * MemoryLayout<Float>.size)
         }
     }
 
@@ -852,7 +894,7 @@ actor DatabaseService {
         case .text(let v):
             sqlite3_bind_text(stmt, index, v, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         case .blob(let data):
-            data.withUnsafeBytes { buffer in
+            _ = data.withUnsafeBytes { buffer in
                 sqlite3_bind_blob(stmt, index, buffer.baseAddress, Int32(buffer.count),
                                  unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             }

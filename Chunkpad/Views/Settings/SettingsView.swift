@@ -3,6 +3,14 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
 
+    @State private var anthropicValidation: ValidationState = .idle
+    @State private var openaiValidation: ValidationState = .idle
+
+    // 5.4: Database management state
+    @State private var dbFileSize: Int64?
+    @State private var dbChunkCount: Int?
+    @State private var showClearDatabaseConfirmation = false
+
     var body: some View {
         @Bindable var appState = appState
 
@@ -11,7 +19,9 @@ struct SettingsView: View {
             embeddingsSection
             llamaSection
             documentIndexingSection(appState: $appState)
+            searchSection(appState: $appState)
             generationSection(appState: $appState)
+            llmParametersSection(appState: $appState)
             privacyNote
             aboutSection
         }
@@ -20,11 +30,15 @@ struct SettingsView: View {
         .onChange(of: appState.generationMode) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.anthropicModel) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.openaiModel) { _, _ in appState.saveToUserProfile() }
-        .onChange(of: appState.anthropicAPIKey) { _, _ in appState.saveToUserProfile() }
-        .onChange(of: appState.openaiAPIKey) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.anthropicAPIKey) { _, _ in appState.saveToUserProfile(); anthropicValidation = .idle }
+        .onChange(of: appState.openaiAPIKey) { _, _ in appState.saveToUserProfile(); openaiValidation = .idle }
         .onChange(of: appState.contextSize) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkSizeTokens) { _, _ in appState.saveToUserProfile() }
         .onChange(of: appState.chunkOverlapTokens) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.searchResultCount) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.searchMinScore) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.llmTemperature) { _, _ in appState.saveToUserProfile() }
+        .onChange(of: appState.llmMaxTokens) { _, _ in appState.saveToUserProfile() }
     }
 
     // MARK: - Database
@@ -48,11 +62,68 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if appState.indexedDocumentCount > 0 {
-                LabeledContent("Indexed Documents") {
-                    Text("\(appState.indexedDocumentCount)")
-                }
+            LabeledContent("Documents") {
+                Text("\(appState.indexedDocumentCount)")
+                    .foregroundStyle(.secondary)
             }
+            LabeledContent("Chunks") {
+                Text(dbChunkCount.map { "\($0)" } ?? "—")
+                    .foregroundStyle(.secondary)
+            }
+            LabeledContent("Size") {
+                Text(formattedDatabaseSize)
+                    .foregroundStyle(.secondary)
+            }
+
+            if appState.isDatabaseConnected && appState.indexedDocumentCount > 0 {
+                Button("Clear All Data…", role: .destructive) {
+                    showClearDatabaseConfirmation = true
+                }
+                .controlSize(.small)
+            }
+        }
+        .task { await refreshDatabaseStats() }
+        .confirmationDialog("Clear All Data", isPresented: $showClearDatabaseConfirmation) {
+            Button("Clear Database", role: .destructive) {
+                Task { await clearDatabase() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will delete all indexed documents, chunks, and embeddings. This cannot be undone.")
+        }
+    }
+
+    private var formattedDatabaseSize: String {
+        guard let size = dbFileSize else { return "—" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: size)
+    }
+
+    private func refreshDatabaseStats() async {
+        guard appState.isDatabaseConnected else { return }
+        let db = DatabaseService()
+        do {
+            try await db.connect()
+            dbChunkCount = try await db.totalChunkCount()
+            dbFileSize = await db.databaseFileSize()
+        } catch {
+            dbChunkCount = nil
+            dbFileSize = nil
+        }
+    }
+
+    private func clearDatabase() async {
+        let db = DatabaseService()
+        do {
+            try await db.connect()
+            try await db.deleteAllData()
+            appState.indexedDocumentCount = 0
+            dbChunkCount = 0
+            await refreshDatabaseStats()
+            NotificationCenter.default.post(name: IndexingViewModel.documentDeletedNotification, object: nil)
+        } catch {
+            // Silently fail; user can retry
         }
     }
 
@@ -196,15 +267,34 @@ struct SettingsView: View {
     @ViewBuilder
     private func documentIndexingSection(appState: Bindable<AppState>) -> some View {
         Section("Document Indexing") {
+            LabeledContent("Embedding model") {
+                Text("\(EmbeddingService.modelDisplayName) (\(EmbeddingService.embeddingDimension)d)")
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Model token limit") {
+                Text("\(EmbeddingService.maxTokenWindow) tokens")
+                    .foregroundStyle(.secondary)
+            }
+
             LabeledContent("Chunk size (tokens)") {
                 TextField(
-                    "1000",
+                    "\(EmbeddingService.maxTokenWindow)",
                     value: appState.chunkSizeTokens,
                     format: .number
                 )
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 80)
                 .multilineTextAlignment(.trailing)
+            }
+
+            if appState.wrappedValue.chunkSizeTokens > EmbeddingService.maxTokenWindow {
+                Label(
+                    "Chunk size exceeds the embedding model's \(EmbeddingService.maxTokenWindow)-token window. Text beyond this limit will be truncated, losing information.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
 
             LabeledContent("Overlap (tokens)") {
@@ -223,7 +313,40 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Approximate; uses ~4 characters per token. Supported formats: TXT, RTF, DOC, DOCX, ODT, PDF.")
+            Text("Recommended: stay at or below the embedding model's token limit (\(EmbeddingService.maxTokenWindow) tokens). Supported formats: TXT, RTF, DOC, DOCX, ODT, PDF.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Search
+
+    @ViewBuilder
+    private func searchSection(appState: Bindable<AppState>) -> some View {
+        Section("Search") {
+            LabeledContent("Max results") {
+                TextField(
+                    "10",
+                    value: appState.searchResultCount,
+                    format: .number
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 80)
+                .multilineTextAlignment(.trailing)
+            }
+
+            LabeledContent("Min relevance score") {
+                HStack(spacing: 8) {
+                    Slider(value: appState.searchMinScore, in: 0.0...1.0, step: 0.05)
+                        .frame(width: 150)
+                    Text(String(format: "%.2f", appState.wrappedValue.searchMinScore))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 40)
+                }
+            }
+
+            Text("Max results caps the number of document chunks sent to the LLM. Min relevance filters out low-quality matches.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -262,6 +385,16 @@ struct SettingsView: View {
                     Text(model.displayName).tag(model.id)
                 }
             }
+
+            HStack(spacing: 8) {
+                Button("Test API Key") {
+                    Task { await testAnthropicKey() }
+                }
+                .controlSize(.small)
+                .disabled(appState.wrappedValue.anthropicAPIKey.isEmpty || anthropicValidation == .testing)
+
+                validationIndicator(state: anthropicValidation)
+            }
         }
 
         Section("ChatGPT (OpenAI)") {
@@ -272,6 +405,16 @@ struct SettingsView: View {
                 ForEach(CloudProvider.openai.availableModels) { model in
                     Text(model.displayName).tag(model.id)
                 }
+            }
+
+            HStack(spacing: 8) {
+                Button("Test API Key") {
+                    Task { await testOpenAIKey() }
+                }
+                .controlSize(.small)
+                .disabled(appState.wrappedValue.openaiAPIKey.isEmpty || openaiValidation == .testing)
+
+                validationIndicator(state: openaiValidation)
             }
         }
 
@@ -290,6 +433,39 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    // MARK: - LLM Parameters
+
+    @ViewBuilder
+    private func llmParametersSection(appState: Bindable<AppState>) -> some View {
+        Section("LLM Parameters") {
+            LabeledContent("Temperature") {
+                HStack(spacing: 8) {
+                    Slider(value: appState.llmTemperature, in: 0.0...1.0, step: 0.1)
+                        .frame(width: 150)
+                    Text(String(format: "%.1f", appState.wrappedValue.llmTemperature))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 30)
+                }
+            }
+
+            LabeledContent("Max tokens") {
+                TextField(
+                    "4096",
+                    value: appState.llmMaxTokens,
+                    format: .number
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 80)
+                .multilineTextAlignment(.trailing)
+            }
+
+            Text("Temperature controls randomness (0 = focused, 1 = creative). Max tokens caps response length.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -330,4 +506,95 @@ struct SettingsView: View {
             }
         }
     }
+
+    // MARK: - API Validation
+
+    @ViewBuilder
+    private func validationIndicator(state: ValidationState) -> some View {
+        switch state {
+        case .idle:
+            EmptyView()
+        case .testing:
+            ProgressView()
+                .controlSize(.small)
+        case .success:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failure(let msg):
+            HStack(spacing: 4) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func testAnthropicKey() async {
+        anthropicValidation = .testing
+        do {
+            var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(appState.anthropicAPIKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            let body: [String: Any] = [
+                "model": appState.anthropicModel,
+                "max_tokens": 1,
+                "messages": [["role": "user", "content": "hi"]]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.timeoutInterval = 10
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                anthropicValidation = .failure("No response")
+                return
+            }
+            if http.statusCode == 200 {
+                anthropicValidation = .success
+            } else if http.statusCode == 401 {
+                anthropicValidation = .failure("Invalid API key")
+            } else {
+                anthropicValidation = .failure("HTTP \(http.statusCode)")
+            }
+        } catch {
+            anthropicValidation = .failure(error.localizedDescription)
+        }
+    }
+
+    private func testOpenAIKey() async {
+        openaiValidation = .testing
+        do {
+            var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(appState.openaiAPIKey)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 10
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                openaiValidation = .failure("No response")
+                return
+            }
+            if http.statusCode == 200 {
+                openaiValidation = .success
+            } else if http.statusCode == 401 {
+                openaiValidation = .failure("Invalid API key")
+            } else {
+                openaiValidation = .failure("HTTP \(http.statusCode)")
+            }
+        } catch {
+            openaiValidation = .failure(error.localizedDescription)
+        }
+    }
+
+}
+
+// MARK: - Validation State
+
+private enum ValidationState: Equatable {
+    case idle
+    case testing
+    case success
+    case failure(String)
 }

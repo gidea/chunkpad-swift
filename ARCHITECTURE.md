@@ -38,17 +38,17 @@ The original plan called for local PostgreSQL + pgvector. We changed to SQLite +
 
 **Decision:** SQLite + sqlite-vec is the right choice for a single-user desktop app. No external dependencies, zero setup, and the database is a portable file.
 
-### Why MLX Swift (not Ollama for embeddings)
+### Why MLX Swift for embeddings and generation
 
-The original plan used Ollama's embedding API. We changed to MLX Swift because:
+MLX Swift handles both embeddings and local LLM generation (Llama 3.2). This avoids external dependencies like separate inference servers:
 
-| Factor | Ollama Embeddings | MLX Swift |
+| Factor | External Server | MLX Swift |
 |---|---|---|
-| **Dependency** | Requires Ollama running | None (framework in app) |
+| **Dependency** | Requires separate process running | None (framework in app) |
 | **Performance** | HTTP API overhead | Direct Metal GPU compute |
 | **Privacy** | Local but external process | In-process, fully sandboxed |
 | **Apple Silicon** | Generic (CPU or GPU) | Optimized for M-series chips |
-| **User setup** | Install Ollama + pull model | Automatic (model auto-downloads) |
+| **User setup** | Install server + pull model | Automatic (model auto-downloads) |
 
 **Decision:** MLX Swift provides the best UX -- zero setup, native Apple Silicon performance, and no external processes.
 
