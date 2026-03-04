@@ -11,4 +11,4 @@
 
 ---
 
-*No active sprint. All epics through Sprint 13 are complete. See `DONE.md` for history and `BACKLOG.md` for future work.*
+*No active sprint. All epics through Sprint 21 are complete. See `DONE.md` for history and `BACKLOG.md` for future work.*
