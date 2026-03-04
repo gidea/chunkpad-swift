@@ -691,23 +691,46 @@ actor DatabaseService {
     }
 
     /// Full-text search using FTS5.
-    func fullTextSearch(query: String, limit: Int = 20) throws -> [(chunkID: String, rank: Double)] {
-        let sql = """
-            SELECT c.id, chunks_fts.rank
-            FROM chunks_fts
-            JOIN chunks c ON c.rowid = chunks_fts.rowid
-            WHERE chunks_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-        """
-        return try self.query(sql, bindings: [.text(query), .int(Int64(limit))]) { stmt in
+    /// - Parameters:
+    ///   - query: The FTS5 match expression.
+    ///   - limit: Maximum results to return.
+    ///   - collectionId: If provided, restricts results to chunks whose document belongs
+    ///                   to this collection. `nil` searches across all documents.
+    func fullTextSearch(query: String, limit: Int = 20, collectionId: String? = nil) throws -> [(chunkID: String, rank: Double)] {
+        let sql: String
+        let bindings: [SQLiteBinding]
+
+        if let collectionId {
+            sql = """
+                SELECT c.id, chunks_fts.rank
+                FROM chunks_fts
+                JOIN chunks c ON c.rowid = chunks_fts.rowid
+                JOIN documents d ON d.id = c.document_id
+                WHERE chunks_fts MATCH ?
+                  AND d.collection_id = ?
+                ORDER BY rank
+                LIMIT ?
+            """
+            bindings = [.text(query), .text(collectionId), .int(Int64(limit))]
+        } else {
+            sql = """
+                SELECT c.id, chunks_fts.rank
+                FROM chunks_fts
+                JOIN chunks c ON c.rowid = chunks_fts.rowid
+                WHERE chunks_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+            """
+            bindings = [.text(query), .int(Int64(limit))]
+        }
+
+        return try self.query(sql, bindings: bindings) { stmt in
             (columnText(stmt, 0), sqlite3_column_double(stmt, 1))
         }
     }
 
-    /// Hybrid search: combine vector KNN + FTS5 results.
-    /// Vector similarity weighted at 70%, keyword relevance at 30%.
-    /// Hybrid search combining vector KNN (70 %) and FTS5 keyword match (30 %).
+    /// Hybrid search: vector KNN (70 %) + FTS5 keyword match (30 %), with optional
+    /// collection scoping and persistent feedback multipliers.
     ///
     /// Returns `ScoredChunk` values so the UI can display relevance and let
     /// users toggle individual chunks on/off before sending context to the LLM.
@@ -718,12 +741,14 @@ actor DatabaseService {
     ///   - k: Maximum number of results to return.
     ///   - minScore: Minimum combined score (0–1). Chunks below this are discarded
     ///               so irrelevant results never reach the LLM. Default 0.1.
-    func hybridSearch(queryEmbedding: [Float], queryText: String, k: Int = 10, minScore: Double = 0.1) throws -> [ScoredChunk] {
-        // 1. Vector search (top 2k candidates)
+    ///   - collectionId: If provided, restricts results to chunks whose document belongs
+    ///                   to this collection. `nil` searches the entire knowledge base.
+    func hybridSearch(queryEmbedding: [Float], queryText: String, k: Int = 10, minScore: Double = 0.1, collectionId: String? = nil) throws -> [ScoredChunk] {
+        // 1. Vector search (top 2k candidates — collection filter applied in Step 5 fetch)
         let vectorResults = try vectorSearch(queryEmbedding: queryEmbedding, k: k * 2)
 
-        // 2. Full-text search (top 2k candidates)
-        let ftsResults = try fullTextSearch(query: queryText, limit: k * 2)
+        // 2. Full-text search (top 2k candidates — collection filtered via JOIN on documents)
+        let ftsResults = try fullTextSearch(query: queryText, limit: k * 2, collectionId: collectionId)
 
         // 3. Merge scores — normalize and combine
         var scores: [String: Double] = [:]
@@ -748,6 +773,15 @@ actor DatabaseService {
             scores[result.chunkID, default: 0] += relevance * 0.3
         }
 
+        // 3.5. Apply feedback multipliers (Task 16.2)
+        // Batch-load all feedback records for scored chunk IDs, then apply each multiplier.
+        // boost (1.5×, capped at 1.0) surfaces persistently valuable chunks;
+        // hide (0.5×) dampens noisy ones while keeping them retrievable when highly relevant.
+        let feedbackMap = try getChunkFeedback(chunkIds: Array(scores.keys))
+        for (id, feedback) in feedbackMap {
+            scores[id] = min(1.0, (scores[id] ?? 0) * feedback.multiplier)
+        }
+
         // 4. Filter by minimum score, sort by combined score, take top k
         let topEntries = scores
             .filter { $0.value >= minScore }
@@ -756,10 +790,34 @@ actor DatabaseService {
         let topIDs = topEntries.map(\.key)
         let scoreMap = Dictionary(uniqueKeysWithValues: topEntries.map { ($0.key, $0.value) })
 
-        // 5. Fetch full chunk data
+        // 5. Fetch full chunk data, joined to documents + collections for collectionName.
+        //    When collectionId is specified, also filter to that collection only
+        //    (catching any vector candidates from outside the collection).
         guard !topIDs.isEmpty else { return [] }
         let placeholders = topIDs.map { _ in "?" }.joined(separator: ", ")
-        let sql = "SELECT id, title, summary, content, document_type, slide_number, source_path, created_at FROM chunks WHERE id IN (\(placeholders))"
+        var bindings: [SQLiteBinding] = topIDs.map { .text($0) }
+        let sql: String
+        if let collectionId {
+            sql = """
+                SELECT c.id, c.title, c.summary, c.content, c.document_type, c.slide_number,
+                       c.source_path, c.created_at, col.name AS collection_name
+                FROM chunks c
+                LEFT JOIN documents d ON d.id = c.document_id
+                LEFT JOIN collections col ON col.id = d.collection_id
+                WHERE c.id IN (\(placeholders))
+                  AND d.collection_id = ?
+            """
+            bindings.append(.text(collectionId))
+        } else {
+            sql = """
+                SELECT c.id, c.title, c.summary, c.content, c.document_type, c.slide_number,
+                       c.source_path, c.created_at, col.name AS collection_name
+                FROM chunks c
+                LEFT JOIN documents d ON d.id = c.document_id
+                LEFT JOIN collections col ON col.id = d.collection_id
+                WHERE c.id IN (\(placeholders))
+            """
+        }
 
         guard let db else { throw DatabaseError.connectionFailed("No connection") }
 
@@ -769,14 +827,15 @@ actor DatabaseService {
             throw DatabaseError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
 
-        for (i, id) in topIDs.enumerated() {
-            sqlite3_bind_text(stmt, Int32(i + 1), id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        for (i, binding) in bindings.enumerated() {
+            bind(stmt: stmt!, index: Int32(i + 1), value: binding)
         }
 
         var scoredChunks: [ScoredChunk] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
+            let chunkId = columnText(stmt!, 0)
             let chunk = Chunk(
-                id: columnText(stmt!, 0),
+                id: chunkId,
                 title: columnText(stmt!, 1),
                 summary: columnTextOptional(stmt!, 2),
                 content: columnText(stmt!, 3),
@@ -785,8 +844,14 @@ actor DatabaseService {
                 sourcePath: columnText(stmt!, 6),
                 createdAt: dateFormatter.date(from: columnText(stmt!, 7)) ?? .now
             )
-            let score = scoreMap[chunk.id] ?? 0
-            scoredChunks.append(ScoredChunk(chunk: chunk, relevanceScore: score))
+            let score = scoreMap[chunkId] ?? 0
+            let collectionName: String? = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? columnText(stmt!, 8) : nil
+            scoredChunks.append(ScoredChunk(
+                chunk: chunk,
+                relevanceScore: score,
+                collectionName: collectionName,
+                feedbackType: feedbackMap[chunkId]?.type
+            ))
         }
 
         // Re-sort by combined score (highest first)
