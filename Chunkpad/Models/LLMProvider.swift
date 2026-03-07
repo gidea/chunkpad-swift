@@ -83,16 +83,14 @@ enum CloudProvider: String, Codable, CaseIterable, Identifiable, Sendable {
 
 struct LocalConfig: Sendable {
     let provider: LocalProvider
-    let endpoint: String
     let modelName: String
     let contextSize: Int
     let temperature: Double
     let maxTokens: Int
 
-    init(provider: LocalProvider, endpoint: String = "", modelName: String = "",
+    init(provider: LocalProvider, modelName: String = "",
          contextSize: Int = 4096, temperature: Double = 0.7, maxTokens: Int = 2048) {
         self.provider = provider
-        self.endpoint = endpoint.isEmpty ? provider.defaultEndpoint : endpoint
         self.modelName = modelName.isEmpty ? provider.defaultModel : modelName
         self.contextSize = contextSize
         self.temperature = temperature
@@ -108,12 +106,6 @@ enum LocalProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .bundled: return "Llama (On-Device)"
-        }
-    }
-
-    var defaultEndpoint: String {
-        switch self {
-        case .bundled: return ""
         }
     }
 

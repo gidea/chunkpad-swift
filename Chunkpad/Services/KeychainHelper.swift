@@ -21,7 +21,10 @@ enum KeychainHelper {
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
         ]
-        SecItemAdd(addQuery as CFDictionary, nil)
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        if status != errSecSuccess {
+            print("[KeychainHelper] Failed to save \(account): OSStatus \(status)")
+        }
     }
 
     /// Retrieve the string for the given account key, or nil if not found.

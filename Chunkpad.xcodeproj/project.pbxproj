@@ -18,6 +18,7 @@
 		3032329B54EE736299566093 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF923CC8AFFE12D8B4E71FC9 /* ChatViewModel.swift */; };
 		31782F89B8691F9AC8DEBA77 /* PinDocumentsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D77AD443F840338F6243DC2E /* PinDocumentsSheet.swift */; };
 		37ACDAA0A5BEB501BA271C0C /* LLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977B7FDACBA8A4B0F819AF3C /* LLMProvider.swift */; };
+		3800DE4BBE9C0527255BE6B8 /* ChunkStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A6364A381A438B32762F88 /* ChunkStatusBadge.swift */; };
 		3B556E6426A27D5CF3C45F0B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000EDA03DCBF63F36397EB4 /* SettingsView.swift */; };
 		4CF77A722570B409C6F15601 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 10683FAAAEDBCBA2CC9D092A /* MLXLLM */; };
 		51B63328B59ECC391EA15AD0 /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3704B6D627F53C260813845A /* MessageBubble.swift */; };
@@ -26,6 +27,7 @@
 		604C4E4B1CD6BD265520FE80 /* AnthropicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */; };
 		7779DB8396EAC60C6B013EB5 /* IndexedDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126169AE8B1B14D3A048FB4B /* IndexedDocument.swift */; };
 		784E28EA2FAB3BA15A47067A /* Chunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2C72E7B8897539F47E4422 /* Chunk.swift */; };
+		7EFCAE5A4F8C27442BC9B487 /* BookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09DC01AD58255A5D1C3CC925 /* BookmarkService.swift */; };
 		85F49A6D686DC0E89AD200CE /* ChunkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2800900A9B7B6AF101D17691 /* ChunkPreview.swift */; };
 		88A6F038B4D1F6723AE95202 /* ScoredChunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A671952C4307ABBA9135C1C /* ScoredChunk.swift */; };
 		F5A433B968C543528759E383 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2DD55F3365451EA7DE977A /* Collection.swift */; };
@@ -55,6 +57,7 @@
 
 /* Begin PBXFileReference section */
 		0596AF2F81926684DFB4105E /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		09DC01AD58255A5D1C3CC925 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
 		126169AE8B1B14D3A048FB4B /* IndexedDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexedDocument.swift; sourceTree = "<group>"; };
 		126F9250109F47C5BF26533B /* Chunkpad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chunkpad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		15B9C791BBBB1C9635A973A4 /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
@@ -88,6 +91,7 @@
 		AD2C72E7B8897539F47E4422 /* Chunk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chunk.swift; sourceTree = "<group>"; };
 		B5EAF502D927E2781BDBCC67 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		B74C9E8AE95D95D0EF721096 /* sqlite-vec.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "sqlite-vec.h"; sourceTree = "<group>"; };
+		C0A6364A381A438B32762F88 /* ChunkStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChunkStatusBadge.swift; sourceTree = "<group>"; };
 		C41B9E26B839EAEFE533DDAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D0613625E9A250908E4D25CF /* GlassIconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassIconButton.swift; sourceTree = "<group>"; };
 		D1B05C4203BD3D9C450E5565 /* ConversationDatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationDatabaseService.swift; sourceTree = "<group>"; };
@@ -119,6 +123,7 @@
 		041A66E2EC65F1D8591920EF /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				C0A6364A381A438B32762F88 /* ChunkStatusBadge.swift */,
 				260E8DD3A89A1EA39273F1EF /* GlassCard.swift */,
 				72DF90FA6432468DA6821220 /* ChunkStatusBadge.swift */,
 				D0613625E9A250908E4D25CF /* GlassIconButton.swift */,
@@ -175,6 +180,7 @@
 			isa = PBXGroup;
 			children = (
 				ACB1984AFE0EAC33A52018E5 /* AnthropicClient.swift */,
+				09DC01AD58255A5D1C3CC925 /* BookmarkService.swift */,
 				2E08FA952EEC3ED43C850BDF /* BundledLLMService.swift */,
 				3905AAD1C08F121C21AD3821 /* ChunkFileService.swift */,
 				D1B05C4203BD3D9C450E5565 /* ConversationDatabaseService.swift */,
@@ -362,6 +368,7 @@
 			files = (
 				604C4E4B1CD6BD265520FE80 /* AnthropicClient.swift in Sources */,
 				FA80B2A8AB663CAE0CF8EEFB /* AppState.swift in Sources */,
+				7EFCAE5A4F8C27442BC9B487 /* BookmarkService.swift in Sources */,
 				22DD238EA6561BF2544A8489 /* BundledLLMService.swift in Sources */,
 				CD3B3A7D87F0D83CB320B323 /* ChatView.swift in Sources */,
 				3032329B54EE736299566093 /* ChatViewModel.swift in Sources */,
@@ -369,6 +376,7 @@
 				5DBA901743B32768ABAA6161 /* ChunkFileService.swift in Sources */,
 				C4B4748CFBC947717FED2338 /* ChunkFileTree.swift in Sources */,
 				85F49A6D686DC0E89AD200CE /* ChunkPreview.swift in Sources */,
+				3800DE4BBE9C0527255BE6B8 /* ChunkStatusBadge.swift in Sources */,
 				D3D5C717F7A05E84A73C3D07 /* ChunkpadApp.swift in Sources */,
 				046FC20E044DCFDC8E59A877 /* ConversationDatabaseService.swift in Sources */,
 				89760D7882CDD82C66E33D28 /* DatabaseService.swift in Sources */,

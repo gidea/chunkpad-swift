@@ -12,9 +12,9 @@ Status: **CURRENT ARCHITECTURE**
 Chunkpad is a native macOS app that turns your local documents into a searchable, AI-queryable knowledge base. The core design principles:
 
 - **Embedded database** -- SQLite + sqlite-vec. No external servers, no Docker, no PostgreSQL. The database is a single file.
-- **On-device embeddings** -- MLX Swift running BAAI/bge-base-en-v1.5 on Apple Silicon. Documents never leave your Mac during indexing.
+- **On-device embeddings** -- MLX Swift running BAAI/bge-large-en-v1.5 on Apple Silicon. Documents never leave your Mac during indexing.
 - **Two-step indexing** -- Documents are processed in two explicit steps: (1) parse and chunk into editable markdown files on disk, (2) review and embed into the vector database. This gives users full control over what gets indexed.
-- **Lazy model downloads** -- Neither the embedding model nor the local LLM is bundled with the app. The embedding model (~438 MB) is downloaded from HuggingFace only when the user clicks "Embed Selected" (Step 2 of indexing). Llama 3.2 (~1.7 GB) is downloaded only when the user explicitly accepts the offer (no cloud API key configured). If you just want the UI, no downloads happen.
+- **Lazy model downloads** -- Neither the embedding model nor the local LLM is bundled with the app. The embedding model (~1.3 GB) is downloaded from HuggingFace only when the user clicks "Embed Selected" (Step 2 of indexing). Llama 3.2 (~1.7 GB) is downloaded only when the user explicitly accepts the offer (no cloud API key configured). If you just want the UI, no downloads happen.
 - **Flexible generation** -- User chooses between cloud LLMs (Claude, ChatGPT) or the bundled Llama 3.2 running on-device via MLX. Both cloud API keys can be configured simultaneously for easy switching. If no API key is set, the app offers to download Llama for free local generation. User is always in control.
 - **Liquid Glass UI** -- macOS 26 native design with `.glassEffect()` throughout. Design values (corner radii, spacing, padding) are centralized in `GlassTokens` to maintain accessibility control, since Liquid Glass has known legibility and contrast issues in its initial release. Reusable glass components (`GlassCard`, `GlassIconButton`, `GlassPill`) keep styling consistent.
 
@@ -52,18 +52,18 @@ MLX Swift handles both embeddings and local LLM generation (Llama 3.2). This avo
 
 **Decision:** MLX Swift provides the best UX -- zero setup, native Apple Silicon performance, and no external processes.
 
-### Why bge-base-en-v1.5 (not MiniLM or nomic-embed)
+### Why bge-large-en-v1.5 (not bge-base or nomic-embed)
 
-| Factor | all-MiniLM-L6-v2 | nomic-embed-text | **bge-base-en-v1.5** |
-|---|---|---|---|
-| **Dimensions** | 384 | 768 | **768** |
-| **Parameters** | 22M | 137M | **109M** |
-| **MTEB Retrieval** | 41.95 | 55.12 | **53.25** |
-| **Download size** | ~90 MB | ~548 MB | **~438 MB** |
-| **RAG quality** | Good | Best | **Excellent** |
-| **MLXEmbedders** | Supported | Supported | **Pre-registered** |
+| Factor | all-MiniLM-L6-v2 | nomic-embed-text | bge-base-en-v1.5 | **bge-large-en-v1.5** |
+|---|---|---|---|---|
+| **Dimensions** | 384 | 768 | 768 | **1024** |
+| **Parameters** | 22M | 137M | 109M | **335M** |
+| **MTEB Retrieval** | 41.95 | 55.12 | 53.25 | **54.29** |
+| **Download size** | ~90 MB | ~548 MB | ~438 MB | **~1.3 GB** |
+| **RAG quality** | Good | Good | Excellent | **Best** |
+| **MLXEmbedders** | Supported | Supported | Pre-registered | **Pre-registered (`ModelConfiguration.bge_large`)** |
 
-**Decision:** bge-base-en-v1.5 offers the best balance of retrieval quality, model size, and out-of-the-box support in MLXEmbedders (`ModelConfiguration.bge_base`). It uses CLS pooling and a query instruction prefix for optimal retrieval.
+**Decision:** bge-large-en-v1.5 offers the best retrieval quality with pre-registered support in MLXEmbedders (`ModelConfiguration.bge_large`). The larger download (~1.3 GB vs ~438 MB for bge-base) is acceptable for a one-time lazy download. It uses CLS pooling and a query instruction prefix for optimal retrieval.
 
 ### Why Lazy Download (not Bundled)
 
@@ -74,7 +74,7 @@ Neither the embedding model nor the local LLM is bundled with the app. Bundling 
 
 Instead, models are downloaded on demand with explicit user consent:
 
-**Embedding model (bge-base-en-v1.5, ~438 MB):**
+**Embedding model (bge-large-en-v1.5, ~1.3 GB):**
 1. User installs Chunkpad -- small, fast download
 2. User explores the UI, configures settings -- no model needed
 3. User adds a folder → documents are parsed and chunked to disk -- no model needed
@@ -120,7 +120,7 @@ The original design indexed documents in a single pass: select folder → parse 
 1. **User control** -- Users can review, include/exclude, and edit chunk files before committing to the expensive embedding step. This is critical for quality: garbage chunks produce garbage retrieval.
 2. **Fast iteration** -- Re-processing a folder (Step 1) takes seconds and requires no model download. Users can adjust chunk size/overlap in Settings and re-process to compare results before embedding.
 3. **Edit-friendly** -- Chunk files are plain markdown on disk (`## Chunk 1`, `## Chunk 2`, ...). Users can open them in any text editor to fix extraction errors, add context, or split/merge chunks. The app detects modified chunk files and offers to re-embed.
-4. **Deferred model download** -- The ~438 MB embedding model is only downloaded when the user explicitly clicks "Embed Selected", not when they first add a folder. This respects bandwidth and lets users explore the UI without triggering large downloads.
+4. **Deferred model download** -- The ~1.3 GB embedding model is only downloaded when the user explicitly clicks "Embed Selected", not when they first add a folder. This respects bandwidth and lets users explore the UI without triggering large downloads.
 
 **Decision:** Two-step indexing gives users transparency and control over what goes into their knowledge base, at the cost of one extra click ("Embed Selected") compared to one-shot indexing.
 
@@ -152,7 +152,7 @@ Chunk markdown files are stored at `{selectedFolder}/_chunks/` (inside the user-
 │  └─ String(contentsOf:)          → .txt, .md, .markdown        │
 │                                                                 │
 │  Output: [ProcessedChunk] with title, content, metadata         │
-│  Chunking: configurable (default ~1000 tokens, ~100 overlap)   │
+│  Chunking: configurable (default 512 tokens, 100 overlap)      │
 │  Skips: _chunks/ directories during enumeration                 │
 └─────────────────┬───────────────────────────────────────────────┘
                   │
@@ -171,16 +171,16 @@ Chunk markdown files are stored at `{selectedFolder}/_chunks/` (inside the user-
 └─────────────────┬───────────────────────────────────────────────┘
                   │
                   ↓  User reviews chunks, clicks "Embed Selected" (Step 2)
-                  ↓  First time? Download embedding model (~438 MB)
+                  ↓  First time? Download embedding model (~1.3 GB)
 ┌─────────────────────────────────────────────────────────────────┐
 │  EmbeddingService (actor, MLX Swift)                            │
 │                                                                 │
-│  Model: BAAI/bge-base-en-v1.5                                   │
-│  ├─ Architecture: BERT (12 layers, 12 heads, 768 hidden)       │
+│  Model: BAAI/bge-large-en-v1.5                                  │
+│  ├─ Architecture: BERT (24 layers, 16 heads, 1024 hidden)      │
 │  ├─ Tokenizer: BERT WordPiece                                   │
 │  ├─ Pooling: CLS token (from 1_Pooling/config.json)            │
 │  ├─ Normalization: L2                                           │
-│  └─ Output: 768-dimensional float32 vector                     │
+│  └─ Output: 1024-dimensional float32 vector                    │
 │                                                                 │
 │  Status: .notDownloaded → .downloading(%) → .loading → .ready  │
 │  Cache: ~/.cache/ (local, persistent)                            │
@@ -192,7 +192,7 @@ Chunk markdown files are stored at `{selectedFolder}/_chunks/` (inside the user-
 │  "Represent this sentence for searching relevant passages: "    │
 └─────────────────┬───────────────────────────────────────────────┘
                   │
-                  ↓  768-dim float32 vectors
+                  ↓  1024-dim float32 vectors
 ┌─────────────────────────────────────────────────────────────────┐
 │  DatabaseService (actor, system SQLite3 C API)                  │
 │                                                                 │
@@ -202,7 +202,7 @@ Chunk markdown files are stored at `{selectedFolder}/_chunks/` (inside the user-
 │  Tables:                                                        │
 │  ├─ documents          Regular table (metadata: name, path, type)│
 │  ├─ chunks             Regular table (content, title, metadata)  │
-│  ├─ vec_chunks         vec0 virtual table (float[768] cosine)    │
+│  ├─ vec_chunks         vec0 virtual table (float[1024] cosine)   │
 │  ├─ chunks_fts         FTS5 virtual table (full-text search)     │
 │  ├─ indexed_folders    Regular table (folder paths, counts)      │
 │  ├─ embedded_chunk_refs Regular table (embed tracking)           │
@@ -216,7 +216,7 @@ Chunk markdown files are stored at `{selectedFolder}/_chunks/` (inside the user-
 ┌─────────────────────────────────────────────────────────────────┐
 │  ChatViewModel (RAG Pipeline)                                   │
 │                                                                 │
-│  1. embedQuery(question)  → 768-dim query vector (with prefix)  │
+│  1. embedQuery(question)  → 1024-dim query vector (with prefix) │
 │  2. hybridSearch()        → vec_chunks KNN (70% weight)         │
 │                             + chunks_fts MATCH (30% weight)     │
 │                             + minScore filter (default 0.1)     │
@@ -282,13 +282,13 @@ User reviews chunks in tree sidebar
     → Clicks "Embed Selected"
     → IndexingViewModel.embedApprovedChunks()
         → EmbeddingService.ensureModelReady()
-            → First time: download bge-base-en-v1.5 (~438 MB)
+            → First time: download bge-large-en-v1.5 (~1.3 GB)
             → Subsequent: load from local cache (instant)
         → For each included chunk:
             → EmbeddingService.embed(chunk.content)     // no query prefix
             → DatabaseService.insertChunk(chunk, embedding)
                 → INSERT into chunks (text)
-                → INSERT into vec_chunks (float[768] vector)
+                → INSERT into vec_chunks (float[1024] vector)
                 → FTS5 trigger auto-syncs chunks_fts
         → embeddedChunkIDs updated and persisted to DB (embedded_chunk_refs)
         → AppState.indexedDocumentCount updated
@@ -385,7 +385,7 @@ Subsequent calls to ensureModelReady() when .ready → instant no-op
 | **Vector Search** | sqlite-vec (vendored) | KNN with cosine distance |
 | **Full-Text Search** | FTS5 | Built into system SQLite on macOS |
 | **Embeddings** | MLXEmbedders (mlx-swift-lm) | On-device BERT on Apple Silicon |
-| **Embedding Model** | BAAI/bge-base-en-v1.5 | High-quality RAG embeddings |
+| **Embedding Model** | BAAI/bge-large-en-v1.5 | High-quality RAG embeddings |
 | **Cloud LLMs** | URLSession + SSE streaming | No SDK dependencies |
 | **Local LLMs** | MLXLLM (Llama 3.2) | Downloaded on demand via MLX, runs on Apple Silicon |
 | **PDF Parsing** | PDFKit | System framework |
@@ -407,7 +407,8 @@ CREATE TABLE documents (
     document_type TEXT NOT NULL,
     chunk_count INTEGER DEFAULT 0,
     file_size INTEGER DEFAULT 0,
-    indexed_at TEXT DEFAULT (datetime('now'))
+    indexed_at TEXT DEFAULT (datetime('now')),
+    collection_id TEXT
 );
 
 -- Text chunks with metadata
@@ -425,7 +426,7 @@ CREATE TABLE chunks (
 -- Vector index (sqlite-vec virtual table)
 CREATE VIRTUAL TABLE vec_chunks USING vec0(
     chunk_id TEXT PRIMARY KEY,
-    embedding float[768] distance_metric=cosine,
+    embedding float[1024] distance_metric=cosine,
     document_type TEXT,
     +title TEXT,
     +source_path TEXT
@@ -453,7 +454,8 @@ CREATE TABLE indexed_folders (
     created_at TEXT NOT NULL,
     last_processed_at TEXT,
     file_count INTEGER DEFAULT 0,
-    chunk_count INTEGER DEFAULT 0
+    chunk_count INTEGER DEFAULT 0,
+    bookmark_data BLOB
 );
 
 -- Embedded chunk tracking (which chunks have been embedded)
@@ -461,6 +463,26 @@ CREATE TABLE embedded_chunk_refs (
     chunk_ref_id TEXT PRIMARY KEY,
     chunk_id TEXT,
     embedded_at TEXT NOT NULL
+);
+
+-- Document collections for scoped retrieval (Epic 13)
+CREATE TABLE collections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    color TEXT
+);
+
+-- Chunk feedback signals for retrieval tuning (Epic 16)
+CREATE TABLE chunk_feedback (
+    id TEXT PRIMARY KEY,
+    chunk_id TEXT,
+    source_path TEXT NOT NULL,
+    title_hash TEXT NOT NULL,
+    feedback_type TEXT NOT NULL DEFAULT 'neutral',
+    multiplier REAL NOT NULL DEFAULT 1.0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 -- Schema migration version tracking
@@ -527,7 +549,7 @@ protocol LLMClient {
 
 | Operation | Time | Notes |
 |---|---|---|
-| First download | 1-5 min | ~438 MB download (one-time) |
+| First download | 1-5 min | ~1.3 GB download (one-time) |
 | Model load (cached) | 2-5s | Loading weights into MLX |
 | Single embed | ~10-30ms | One chunk on M-series GPU |
 | Batch of 100 | ~1-3s | Sequential, memory-bounded |
@@ -601,7 +623,7 @@ Second chunk content here...
 
 | Storage | Contents | Notes |
 |--------|----------|-------|
-| Main SQLite (chunkpad.db) | documents, chunks, vec_chunks, chunks_fts, indexed_folders, embedded_chunk_refs, schema_version | Source of truth for indexing |
+| Main SQLite (chunkpad.db) | documents, chunks, vec_chunks, chunks_fts, indexed_folders, embedded_chunk_refs, collections, chunk_feedback, schema_version | Source of truth for indexing |
 | Chat SQLite (chunkpad_chat.db) | conversations, messages | Chat history only |
 | UserDefaults | generation mode, model selections, chunk size/overlap | User preferences only |
 | Keychain | API keys | Via KeychainHelper |
@@ -611,14 +633,14 @@ Second chunk content here...
 **Do not:**
 - Store document metadata or indexed folder paths in UserDefaults — use the main DB
 - Store API keys in UserDefaults — use Keychain via `KeychainHelper`
-- Store embedded chunk IDs in UserDefaults — use `embedded_chunk_refs` table
+- Store embedded chunk IDs in UserDefaults -- use `embedded_chunk_refs` table in main SQLite
 
 ---
 
 ## Future Work
 
 - **Incremental indexing** -- Detect changed source files and re-process only those (currently re-processes all)
-- **Model selection** -- Let users pick from multiple embedding models (bge-small for speed, bge-large for quality)
 - **Export/import** -- Export the SQLite database for backup or sharing
 - **Multi-language** -- Switch to bge-m3 for multilingual document support
 - **Chunk file editing UI** -- In-app chunk editor instead of requiring external text editor
+- **PPTX support** -- Add PowerPoint document parsing

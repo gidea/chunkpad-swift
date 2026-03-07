@@ -288,14 +288,14 @@ User clicks "Add Folder"
         → DocumentProcessor.processDirectory(at: url)
             → Enumerate supported files (skips _chunks/ directories)
             → For each file: parse → chunk
-            → Chunk size/overlap from AppState Settings (default 1000 tokens, 100 overlap)
+            → Chunk size/overlap from AppState Settings (default 512 tokens, 100 overlap)
             → Returns [URL: [ProcessedChunk]]
         → ChunkFileService.writeChunks() for each file
             → Creates {selectedFolder}/_chunks/ (inside the selected folder)
             → Writes one .md file per source file, mirroring folder structure
         → ChunkFileService.discoverChunkFiles() → [ChunkFileInfo]
         → ChunkFileTree built for sidebar display
-        → IndexedFolder persisted to UserDefaults
+        → IndexedFolder persisted to main database
 ```
 
 No embedding model is downloaded. No database writes. This step is fast.
@@ -325,7 +325,7 @@ User clicks "Embed Selected"
             → Create IndexedDocument in DB
             → Embed chunk content (no query prefix)
             → Store chunk + vector in SQLite
-            → Track embedded chunk IDs (persisted in UserDefaults)
+            → Track embedded chunk IDs (tracked in embedded_chunk_refs table)
         → Update AppState.indexedDocumentCount
 ```
 
@@ -337,13 +337,13 @@ This list is loaded via `.task { indexedDocuments = await viewModel.loadIndexedD
 
 ### 2.5 Observations and Concerns
 
-1. **No way to remove indexed documents.** Once embedded, there is no delete action — no swipe-to-delete on list rows, no "Remove" button, no "Clear All" option. Users who want to re-index or remove stale documents have no UI path.
+1. **No way to remove indexed documents.** Once embedded, there is no delete action — no swipe-to-delete on list rows, no "Remove" button, no "Clear All" option. Users who want to re-index or remove stale documents have no UI path. (Resolved: Sprint 8 added context menu delete and swipe-to-delete)
 
 2. **No incremental processing.** Re-adding the same folder re-processes all files and overwrites the `_chunks/` directory. There is no diff to detect which source files have changed.
 
 3. **Folder selection is per-action.** The user must click "Add Folder" and use `NSOpenPanel` for every processing operation. The `IndexedFolder` is persisted, but only the most recent folder is remembered, and there is no UI to re-process or re-add it without the folder picker.
 
-4. **No cancel during processing or embedding.** The "Add Folder" button is disabled during processing, but there is no cancel/stop button.
+4. **No cancel during processing or embedding.** The "Add Folder" button is disabled during processing, but there is no cancel/stop button. (Resolved: Sprint 2 added stop button)
 
 5. **No file-level progress during embedding.** The progress bar shows file count (e.g. "3/5 files") but not chunk-level detail. Large files with many chunks cause the progress bar to stall on a single file.
 
@@ -367,9 +367,9 @@ A `Form` with `.grouped` style, divided into sections.
 │    Indexed Documents:  42                         │
 ├──────────────────────────────────────────────────┤
 │  Embeddings (Local via MLX)                      │
-│    Model:              bge-base-en-v1.5           │
-│    Size:               ~438 MB                    │
-│    Dimensions:         768                        │
+│    Model:              bge-large-en-v1.5          │
+│    Size:               ~1.3 GB                    │
+│    Dimensions:         1024                       │
 │    Status:             ● Ready                    │
 │    (if not downloaded: "Will download on index")  │
 │    Framework:          MLX Swift on Apple Silicon  │
@@ -428,9 +428,9 @@ A `Form` with `.grouped` style, divided into sections.
 
 ### 3.3 Observations and Concerns
 
-1. **No validation of API keys.** The user can enter any string as an API key. There is no "Test Connection" button or automatic validation. A bad key only surfaces as an error when the user tries to chat.
+1. **No validation of API keys.** The user can enter any string as an API key. There is no "Test Connection" button or automatic validation. A bad key only surfaces as an error when the user tries to chat. (Resolved: Test connection buttons added for both providers)
 
-2. **No visual connection between Settings and Chat.** After entering an API key in Settings, there is no confirmation or feedback that the key is active. The user must navigate to Chat and send a message to verify. A "Connected" badge or test-send button would help.
+2. **No visual connection between Settings and Chat.** After entering an API key in Settings, there is no confirmation or feedback that the key is active. The user must navigate to Chat and send a message to verify. A "Connected" badge or test-send button would help. (Resolved: Validation state with success/failure indicators)
 
 3. **The embedding model section is informational only.** Users cannot trigger a manual download, clear the cache, or change the embedding model. This is by design (the model downloads on first index) but may frustrate users who want to pre-download the model before indexing.
 
@@ -475,7 +475,7 @@ A `Form` with `.grouped` style, divided into sections.
 5. Watch processing progress (files parsed, chunked to disk — fast, no model needed)
 6. Review chunk tree in sidebar: browse files, toggle chunks on/off
 7. (Optional) Adjust chunk size/overlap in Settings, re-add folder to regenerate
-8. Click "Embed Selected (N)" → embedding model downloads (~438 MB, one-time)
+8. Click "Embed Selected (N)" → embedding model downloads (~1.3 GB, one-time)
 9. Watch embedding progress
 10. Navigate to Settings tab
 11. Enter API key for Claude or ChatGPT, select model
@@ -530,6 +530,44 @@ A `Form` with `.grouped` style, divided into sections.
 
 ---
 
+## Recent Feature Additions (Epics 13–16)
+
+The following features were added across Sprints 14–21 and are now part of the shipping beta.
+
+### Collections (Epic 13)
+
+- **Collection management in Documents view** — create, rename, delete, and assign colors to collections.
+- **Assign documents to collections** after embedding, organizing indexed content into logical groups.
+- **Scoped search** — filter retrieval to specific collections via a scope picker in the Chat toolbar.
+- **Collection badges on chunk previews** — chunk cards display their collection membership.
+
+### Context Preview (Epic 14)
+
+- **Search-before-send panel (Cmd+K)** — preview which chunks will be retrieved before sending a message.
+- **Per-chunk toggle and document removal** in the preview panel for fine-grained context control.
+- **Relevance score filtering slider** — adjust the minimum relevance threshold interactively.
+- **Collection-scoped preview search** — preview results filtered by selected collections.
+- **Token budget bar** — shows context utilization with warnings at >80% capacity.
+
+### Chat Export (Epic 15)
+
+- **Copy conversation to clipboard** (formatted text).
+- **Export as Markdown (.md) file.**
+- **Export as Word (.docx) document.**
+- **Save individual responses to Knowledge Base** — re-indexes the response as a new searchable document.
+- **Save entire conversation to Knowledge Base.**
+- **Export indicator on conversation sidebar** — marks conversations that have been exported.
+
+### Retrieval Feedback (Epic 16)
+
+- **Boost/hide signals on retrieved chunks** — persistent feedback that carries across queries.
+- **Feedback multiplier** — affects relevance scores in hybrid search, surfacing boosted chunks and suppressing hidden ones.
+- **Feedback management view with analytics** — dedicated view for reviewing all feedback signals.
+- **Top documents by feedback activity** — analytics showing which documents receive the most feedback.
+- **Bulk feedback operations** — clear all feedback, or clear by type (boost/hide).
+
+---
+
 ## 6. Cross-Cutting Concerns
 
 ### Error Visibility
@@ -576,14 +614,14 @@ A `Form` with `.grouped` style, divided into sections.
 | Llama status in Settings | **Done** | Llama section with status, download, and unload buttons |
 | Configurable chunk size | **Done** | Chunk size (tokens) and overlap (tokens) in Settings |
 | Two-step indexing | **Done** | Process → review → embed pipeline with chunk file tree |
-| Auto-scroll to newest message | Missing | User must manually scroll during streaming |
-| Stop generation | Missing | Cannot cancel slow LLM responses |
-| Delete indexed documents | Missing | No way to remove stale data |
-| Pre-query document pinning | Missing | Can only pin after first search |
-| Configurable search params | Missing | k=10 and minScore=0.1 are hardcoded |
-| Markdown rendering | Missing | Assistant responses render as plain text |
+| Auto-scroll to newest message | **Done** (Sprint 4) | ScrollViewReader with auto-scroll during streaming |
+| Stop generation | **Done** (Sprint 4) | Stop button replaces send during generation |
+| Delete indexed documents | **Done** (Sprint 8) | Context menu and swipe-to-delete on indexed documents |
+| Pre-query document pinning | **Done** (Sprint 9) | Pin documents sheet accessible before first search |
+| Configurable search params | **Done** (Sprint 7) | User-configurable k and minScore in Settings |
+| Markdown rendering | **Done** (Sprint 7) | Assistant responses rendered as formatted Markdown |
 | In-app chunk editor | Missing | Must edit .md files externally; app detects modifications |
-| Cancel processing/embedding | Missing | No stop button during folder processing or embedding |
+| Cancel processing/embedding | **Done** (Sprint 2) | Stop button during folder processing or embedding |
 
 ---
 
@@ -601,20 +639,16 @@ Implemented:
 - **Configurable chunk size** — Document Indexing section in Settings with chunk size (tokens) and overlap (tokens) fields, persisted in UserDefaults.
 - **Sandbox fix** — Changed entitlement from `files.user-selected.read-only` to `files.user-selected.read-write` so the app can write `_chunks/` inside user-selected folders. Chunk output directory moved from sibling (`{folder}_chunks/`) to inside (`{folder}/_chunks/`) to stay within NSOpenPanel's security-scoped access.
 
-Remaining, in priority order:
+Completed since initial review:
 
-1. **Auto-scroll chat** — Add a `ScrollViewReader` with `scrollTo` when messages update or tokens stream in.
+1. **Auto-scroll chat** — ScrollViewReader with auto-scroll during streaming (Sprint 4).
+2. **Stop generation button** — Replaces send button during generation with stop (Sprint 4).
+3. **Distinguish pinned chunks** — Pin icon with orange tint instead of fake 100% score (Sprint 7).
+4. **Document deletion** — Context menu and swipe-to-delete on indexed documents (Sprint 8).
+5. **Validate/test API keys** — Test buttons in Settings for both Anthropic and OpenAI (Sprint 7).
+6. **Cancel processing/embedding** — Stop button during folder processing (Sprint 2).
 
-2. **Add stop generation button** — Replace the disabled send button with a stop button during generation. Use `Task` cancellation.
+Remaining:
 
-3. **Distinguish pinned chunks visually** — Show a pin icon instead of a fake "100 %" relevance score. Makes it clear these are manually included, not search results.
-
-4. **Add document deletion** — Swipe-to-delete or a toolbar button to remove indexed documents and their chunks from the vector DB.
-
-5. **Allow collapsing the chunks bar** — A disclosure toggle to hide the chunks bar when the user wants more conversation space.
-
-6. **Validate/test API keys** — A "Test" button in Settings that sends a minimal request to verify the key works.
-
-7. **In-app chunk editor** — Edit chunk content directly in the review view instead of requiring an external text editor.
-
-8. **Cancel processing/embedding** — A stop button to abort folder processing or embedding in progress.
+1. **Allow collapsing the chunks bar** — A disclosure toggle to hide the chunks bar entirely when the user wants more conversation space.
+2. **In-app chunk editor** — Edit chunk content directly instead of requiring an external text editor.
