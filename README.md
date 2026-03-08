@@ -72,7 +72,7 @@ chunkpad-swift/
 │   │   ├── ChunkFileService.swift     # Chunk markdown file I/O
 │   │   ├── ConversationDatabaseService.swift # Chat conversation SQLite DB
 │   │   ├── DatabaseService.swift      # SQLite + sqlite-vec + FTS5
-│   │   ├── DocumentProcessor.swift    # PDF/DOCX/TXT/MD/PPTX parsing & chunking
+│   │   ├── DocumentProcessor.swift    # PDF/DOCX/TXT/MD/RTF parsing & chunking
 │   │   ├── EmbeddingService.swift     # MLX embedding (bge-large-en-v1.5)
 │   │   ├── KeychainHelper.swift       # Keychain storage for API keys
 │   │   ├── LLMService.swift           # LLM client protocol & factory
@@ -80,19 +80,33 @@ chunkpad-swift/
 │   ├── ViewModels/
 │   │   ├── ChatViewModel.swift        # RAG pipeline orchestration
 │   │   └── IndexingViewModel.swift    # Document indexing orchestration
+│   ├── Utilities/
+│   │   └── Color+Hex.swift            # Color(hex:) initializer for CSS hex colors
 │   ├── Views/
 │   │   ├── MainView.swift             # Root NavigationSplitView
 │   │   ├── Chat/
-│   │   │   ├── ChatView.swift         # Chat interface + regenerate + pin docs
+│   │   │   ├── ChatView.swift         # Chat orchestration (toolbar, dialogs, bottom bar)
+│   │   │   ├── ChatMessagesView.swift # Messages scroll area with auto-scroll
+│   │   │   ├── ChatInputBar.swift     # Input field, pin button, search preview, send
+│   │   │   ├── ChunksBarView.swift    # Collapsible retrieved chunks bar + regenerate
+│   │   │   ├── SearchPanelView.swift  # Pre-send search results panel (Cmd+K)
 │   │   │   ├── MessageBubble.swift    # Message display
 │   │   │   ├── ChunkPreview.swift     # Chunk preview with score & toggle
 │   │   │   └── PinDocumentsSheet.swift # Pin documents to always include
 │   │   ├── Documents/
-│   │   │   ├── DocumentsView.swift    # Document list & indexing trigger
-│   │   │   ├── FeedbackManagementView.swift  # Chunk feedback management & analytics
+│   │   │   ├── DocumentsView.swift    # Document management orchestration
+│   │   │   ├── CollectionsSectionView.swift  # Collection sidebar with CRUD
+│   │   │   ├── ChunkTreeSidebarView.swift   # Chunk file tree outline
+│   │   │   ├── ChunkListView.swift    # Chunk list/grid with filter bar
+│   │   │   ├── DocumentBannersView.swift    # Error, skipped file, inaccessible banners
+│   │   │   ├── FeedbackManagementView.swift # Chunk feedback management & analytics
 │   │   │   └── IndexingProgressView.swift
 │   │   ├── Settings/
-│   │   │   └── SettingsView.swift     # LLM config, DB status, model info
+│   │   │   ├── SettingsView.swift     # Settings orchestration (smaller sections inline)
+│   │   │   ├── DatabaseSettingsSection.swift     # DB status, stats, clear data
+│   │   │   ├── EmbeddingsSettingsSection.swift   # Embedding model info & status
+│   │   │   ├── LlamaSettingsSection.swift        # Bundled Llama download/unload
+│   │   │   └── GenerationSettingsSection.swift   # Provider picker, API keys, validation
 │   │   └── Components/
 │   │       ├── ChunkStatusBadge.swift # Embedding status indicator (colored icon + label)
 │   │       ├── GlassCard.swift        # Reusable Liquid Glass card

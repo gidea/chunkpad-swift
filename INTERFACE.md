@@ -33,7 +33,7 @@ The selected tab is stored in `AppState.selectedTab` so that other views can pro
 
 ## 1. Chat View
 
-**File:** `ChatView.swift`
+**Files:** `ChatView.swift`, `ChatMessagesView.swift`, `ChatInputBar.swift`, `ChunksBarView.swift`, `SearchPanelView.swift`
 **ViewModel:** `ChatViewModel`
 
 The primary interaction surface. A **NavigationSplitView** with a conversation sidebar and a detail pane:
@@ -189,7 +189,7 @@ User types question → presses Enter
 
 ## 2. Documents View
 
-**File:** `DocumentsView.swift`
+**Files:** `DocumentsView.swift`, `CollectionsSectionView.swift`, `ChunkTreeSidebarView.swift`, `ChunkListView.swift`, `DocumentBannersView.swift`
 **ViewModel:** `IndexingViewModel`
 
 The document management screen. Uses a **two-step indexing pipeline**: (1) process documents into editable chunk markdown files on disk, (2) review and embed selected chunks into the vector database.
@@ -353,7 +353,7 @@ This list is loaded via `.task { indexedDocuments = await viewModel.loadIndexedD
 
 ## 3. Settings View
 
-**File:** `SettingsView.swift`
+**Files:** `SettingsView.swift`, `DatabaseSettingsSection.swift`, `EmbeddingsSettingsSection.swift`, `LlamaSettingsSection.swift`, `GenerationSettingsSection.swift`
 **State:** `AppState` (direct bindings)
 
 A `Form` with `.grouped` style, divided into sections.
@@ -384,9 +384,9 @@ A `Form` with `.grouped` style, divided into sections.
 │    [Download Llama] / [Remove from memory]        │
 ├──────────────────────────────────────────────────┤
 │  Document Indexing                               │
-│    Chunk size (tokens): [1000]                    │
+│    Chunk size (tokens): [512]                     │
 │    Overlap (tokens):    [100]                     │
-│    Approx. characters per chunk: ~4000            │
+│    Approx. characters per chunk: ~2048            │
 ├──────────────────────────────────────────────────┤
 │  Generation Model                                │
 │    ○ Claude                                      │
@@ -589,15 +589,15 @@ The following features were added across Sprints 14–21 and are now part of the
 | Generation mode | Yes (UserDefaults) | Persistent | Load at launch, save on change in Settings |
 | Model selections | Yes (UserDefaults) | Persistent | Anthropic/OpenAI model, context size |
 | Chunk size/overlap | Yes (UserDefaults) | Persistent | `chunkSizeTokens`, `chunkOverlapTokens` in AppState |
-| Indexed folder | Yes (UserDefaults) | Persistent | `rootURL` + `chunksRootURL` pair; only most recent folder |
-| Embedded chunk IDs | Yes (UserDefaults) | Persistent | Set of `"{filePath}::chunk_{index}"` strings |
+| Indexed folder | Yes (main DB) | Persistent | `rootURL` + `chunksRootURL` pair in `indexed_folders` table |
+| Embedded chunk IDs | Yes (main DB) | Persistent | Tracked in `embedded_chunk_refs` table |
 | Chunk files on disk | Yes (filesystem) | Persistent | `{folder}/_chunks/` directory; editable by user |
 | Chunk inclusion toggles | No | Session | `chunkInclusionOverrides` dict in IndexingViewModel |
 | Conversations & messages | Yes (SQLite) | Persistent | Separate DB `chunkpad_chat.db`; no restore at launch |
 | Current conversation | No | Session | In-memory `currentConversationId`; user selects or creates |
 | Retrieved chunks | No | Per-query | Replaced on new query |
 | Chunk toggles (chat) | No | Per-query | `ScoredChunk.isIncluded`; reset on new query |
-| Pinned documents | No | Session | In-memory only; not persisted |
+| Pinned documents | Yes (UserDefaults) | Persistent | `pinnedDocumentIDs` set in AppState |
 | Indexed document count | Yes (DB) | Persistent | Main DB `chunkpad.db` |
 | Embedding model cache | Yes (disk) | Persistent | Survives quit |
 | Llama model cache | Yes (disk) | Persistent | Survives quit |
